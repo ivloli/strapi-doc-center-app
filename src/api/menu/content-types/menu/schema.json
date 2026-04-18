@@ -1,10 +1,10 @@
 {
   "kind": "collectionType",
-  "collectionName": "articles",
+  "collectionName": "menus",
   "info": {
-    "singularName": "article",
-    "pluralName": "articles",
-    "displayName": "article"
+    "singularName": "menu",
+    "pluralName": "menus",
+    "displayName": "menu"
   },
   "options": {
     "draftAndPublish": true
@@ -13,9 +13,6 @@
   "attributes": {
     "Title": {
       "type": "string"
-    },
-    "Content": {
-      "type": "richtext"
     },
     "menu": {
       "type": "relation",
