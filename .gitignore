@@ -4,4 +4,5 @@ build/
 .cache/
 .tmp/
 .env
+.deploy.mk
 .DS_Store

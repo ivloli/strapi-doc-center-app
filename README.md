@@ -1,61 +1,133 @@
-# 🚀 Getting started with Strapi
+# Strapi Doc Center
 
-Strapi comes with a full featured [Command Line Interface](https://docs.strapi.io/dev-docs/cli) (CLI) which lets you scaffold and manage your project in seconds.
+A Strapi v5 CMS for documentation, with PostgreSQL and MinIO (S3-compatible) storage.
 
-### `develop`
+## Requirements
 
-Start your Strapi application with autoReload enabled. [Learn more](https://docs.strapi.io/dev-docs/cli#strapi-develop)
+- Ubuntu 20.04+
+- Node.js 20+ (auto-installed by `make deploy`)
+- PostgreSQL
+- MinIO or S3-compatible storage
 
-```
-npm run develop
-# or
-yarn develop
-```
+## Quick Start
 
-### `start`
+Clone the repo directly to your target directory, then deploy:
 
-Start your Strapi application with autoReload disabled. [Learn more](https://docs.strapi.io/dev-docs/cli#strapi-start)
-
-```
-npm run start
-# or
-yarn start
+```bash
+git clone git@github.com:ivloli/strapi-doc-center-app.git /opt/strapi-doc-center-app
+cd /opt/strapi-doc-center-app
+make deploy
 ```
 
-### `build`
+`make deploy` will:
+1. Install Node.js 20 if not present
+2. Generate a `.env` template if none exists
+3. Install npm dependencies
+4. Build the admin panel
+5. Register and enable a systemd service
 
-Build your admin panel. [Learn more](https://docs.strapi.io/dev-docs/cli#strapi-build)
+After deploy completes, edit `.env` with real values:
 
-```
-npm run build
-# or
-yarn build
-```
-
-## ⚙️ Deployment
-
-Strapi gives you many possible deployment options for your project including [Strapi Cloud](https://cloud.strapi.io). Browse the [deployment section of the documentation](https://docs.strapi.io/dev-docs/deployment) to find the best solution for your use case.
-
-```
-yarn strapi deploy
+```bash
+nano .env
 ```
 
-## 📚 Learn more
+Key values to fill in:
 
-- [Resource center](https://strapi.io/resource-center) - Strapi resource center.
-- [Strapi documentation](https://docs.strapi.io) - Official Strapi documentation.
-- [Strapi tutorials](https://strapi.io/tutorials) - List of tutorials made by the core team and the community.
-- [Strapi blog](https://strapi.io/blog) - Official Strapi blog containing articles made by the Strapi team and the community.
-- [Changelog](https://strapi.io/changelog) - Find out about the Strapi product updates, new features and general improvements.
+| Variable | Description |
+|---|---|
+| `DATABASE_URL` | PostgreSQL connection string |
+| `APP_KEYS` | Comma-separated random strings |
+| `ADMIN_JWT_SECRET` | Random secret |
+| `API_TOKEN_SALT` | Random secret |
+| `TRANSFER_TOKEN_SALT` | Random secret |
+| `JWT_SECRET` | Random secret |
+| `S3_ENDPOINT` | MinIO endpoint (use server LAN IP, not 127.0.0.1) |
+| `S3_ACCESS_KEY_ID` | MinIO access key |
+| `S3_SECRET_ACCESS_KEY` | MinIO secret key |
 
-Feel free to check out the [Strapi GitHub repository](https://github.com/strapi/strapi). Your feedback and contributions are welcome!
+Then start the service:
 
-## ✨ Community
+```bash
+make restart
+```
 
-- [Discord](https://discord.strapi.io) - Come chat with the Strapi community including the core team.
-- [Forum](https://forum.strapi.io/) - Place to discuss, ask questions and find answers, show your Strapi project and get feedback or just talk with other Community members.
-- [Awesome Strapi](https://github.com/strapi/awesome-strapi) - A curated list of awesome things related to Strapi.
+## Make Commands
 
----
+| Command | Description |
+|---|---|
+| `make deploy` | First-time setup: install deps, build, register systemd service |
+| `make update` | Pull latest code, rebuild, restart |
+| `make restart` | Restart the systemd service |
+| `make status` | Show service status |
+| `make logs` | Tail service logs |
+| `make switch-dev` | Switch to develop mode (hot reload) |
+| `make switch-prod` | Build and switch to production mode |
+| `make show-config` | Show current config values |
+| `make uninstall` | Stop and remove the systemd service |
 
-<sub>🤫 Psst! [Strapi is hiring](https://strapi.io/careers).</sub>
+## MinIO Setup
+
+The app uses a dedicated MinIO user scoped to the `files/strapi/` prefix.
+
+```bash
+# Install mcli (MinIO Client)
+curl -O https://dl.min.io/client/mc/release/linux-amd64/mc
+chmod +x mc && sudo mv mc /usr/local/bin/mcli
+
+# Connect as root
+mcli alias set myminio-root http://<minio-host>:9100 <root-user> <root-password>
+
+# Create policy
+cat > /tmp/strapi-policy.json << 'EOF'
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"],
+      "Resource": "arn:aws:s3:::files/strapi/*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": "s3:ListBucket",
+      "Resource": "arn:aws:s3:::files",
+      "Condition": {
+        "StringLike": { "s3:prefix": "strapi/*" }
+      }
+    }
+  ]
+}
+EOF
+
+mcli admin policy create myminio-root strapi-policy /tmp/strapi-policy.json
+mcli admin user add myminio-root strapi-user '<your-password>'
+mcli admin policy attach myminio-root strapi-policy --user strapi-user
+```
+
+Set `S3_ROOT_PATH=strapi` in `.env` to scope uploads to this prefix.
+
+## Development Mode
+
+```bash
+make switch-dev   # enables hot reload
+make switch-prod  # builds and switches back to production
+```
+
+## Updating
+
+After pushing new code to the repo:
+
+```bash
+make update
+```
+
+This pulls the latest code, rebuilds the admin panel, and restarts the service.
+
+## Uninstall
+
+```bash
+make uninstall
+```
+
+Stops and removes the systemd service. The app directory and `.env` are preserved.
