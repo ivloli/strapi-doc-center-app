@@ -1,7 +1,3 @@
-DEPLOY_CONFIG_FILE ?= .deploy.mk
-
--include $(DEPLOY_CONFIG_FILE)
-
 APP_BRANCH ?= main
 APP_DIR := $(shell pwd)
 APP_PORT ?= 1337
