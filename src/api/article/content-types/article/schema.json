@@ -4,7 +4,7 @@
   "info": {
     "singularName": "article",
     "pluralName": "articles",
-    "displayName": "article"
+    "displayName": "文章"
   },
   "options": {
     "draftAndPublish": true
@@ -17,7 +17,7 @@
     "Content": {
       "type": "richtext"
     },
-    "menu": {
+    "Directory": {
       "type": "relation",
       "relation": "oneToOne",
       "target": "api::menu.menu"

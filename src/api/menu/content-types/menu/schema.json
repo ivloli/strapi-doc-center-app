@@ -4,7 +4,7 @@
   "info": {
     "singularName": "menu",
     "pluralName": "menus",
-    "displayName": "menu"
+    "displayName": "目录"
   },
   "options": {
     "draftAndPublish": true
@@ -14,7 +14,7 @@
     "Title": {
       "type": "string"
     },
-    "menu": {
+    "Directory": {
       "type": "relation",
       "relation": "oneToOne",
       "target": "api::menu.menu"
