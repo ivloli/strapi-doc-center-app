@@ -1,4 +1,3 @@
-APP_BRANCH ?= main
 APP_DIR := $(shell pwd)
 APP_PORT ?= 1337
 APP_USER ?= $(shell whoami)
@@ -21,7 +20,6 @@ help:
 show-config:
 	@printf '%s\n' \
 	  "APP_DIR=$(APP_DIR)" \
-	  "APP_BRANCH=$(APP_BRANCH)" \
 	  "APP_PORT=$(APP_PORT)" \
 	  "APP_USER=$(APP_USER)" \
 	  "SERVICE_NAME=$(SERVICE_NAME)"
@@ -137,7 +135,7 @@ run:
 
 update:
 	@echo '[make] Pulling latest code'
-	@git -C "$(APP_DIR)" pull origin "$(APP_BRANCH)"
+	@git pull
 	@$(MAKE) build
 	@$(MAKE) restart
 
