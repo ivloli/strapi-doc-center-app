@@ -4,20 +4,34 @@
   "info": {
     "singularName": "menu",
     "pluralName": "menus",
-    "displayName": "目录"
+    "displayName": "menu"
   },
   "options": {
     "draftAndPublish": true
   },
   "pluginOptions": {},
   "attributes": {
-    "Title": {
-      "type": "string"
+    "title": {
+      "type": "string",
+      "required": true,
+      "unique": true
     },
-    "Directory": {
+    "value": {
+      "type": "string",
+      "required": true,
+      "unique": true
+    },
+    "menu": {
       "type": "relation",
-      "relation": "oneToOne",
-      "target": "api::menu.menu"
+      "relation": "manyToOne",
+      "target": "api::menu.menu",
+      "inversedBy": "menus"
+    },
+    "menus": {
+      "type": "relation",
+      "relation": "oneToMany",
+      "target": "api::menu.menu",
+      "mappedBy": "menu"
     }
   }
 }

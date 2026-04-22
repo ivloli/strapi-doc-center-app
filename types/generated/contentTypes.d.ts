@@ -441,11 +441,10 @@ export interface ApiArticleArticle extends Struct.CollectionTypeSchema {
     draftAndPublish: true;
   };
   attributes: {
-    Content: Schema.Attribute.RichText;
+    content: Schema.Attribute.RichText;
     createdAt: Schema.Attribute.DateTime;
     createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
       Schema.Attribute.Private;
-    Directory: Schema.Attribute.Relation<'oneToOne', 'api::menu.menu'>;
     locale: Schema.Attribute.String & Schema.Attribute.Private;
     localizations: Schema.Attribute.Relation<
       'oneToMany',
@@ -453,7 +452,41 @@ export interface ApiArticleArticle extends Struct.CollectionTypeSchema {
     > &
       Schema.Attribute.Private;
     publishedAt: Schema.Attribute.DateTime;
-    Title: Schema.Attribute.String;
+    title: Schema.Attribute.String;
+    updatedAt: Schema.Attribute.DateTime;
+    updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
+      Schema.Attribute.Private;
+  };
+}
+
+export interface ApiDocumatioinDocumatioin extends Struct.CollectionTypeSchema {
+  collectionName: 'documatioins';
+  info: {
+    displayName: 'documatioin';
+    pluralName: 'documatioins';
+    singularName: 'documatioin';
+  };
+  options: {
+    draftAndPublish: true;
+  };
+  attributes: {
+    content: Schema.Attribute.RichText &
+      Schema.Attribute.Required &
+      Schema.Attribute.DefaultTo<'\u8FD9\u662F\u9ED8\u8BA4\u7684\u5185\u5BB9...'>;
+    createdAt: Schema.Attribute.DateTime;
+    createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
+      Schema.Attribute.Private;
+    locale: Schema.Attribute.String & Schema.Attribute.Private;
+    localizations: Schema.Attribute.Relation<
+      'oneToMany',
+      'api::documatioin.documatioin'
+    > &
+      Schema.Attribute.Private;
+    publishedAt: Schema.Attribute.DateTime;
+    title: Schema.Attribute.String &
+      Schema.Attribute.Required &
+      Schema.Attribute.Unique &
+      Schema.Attribute.DefaultTo<'\u8FD9\u662F\u9ED8\u8BA4\u7684\u6807\u9898...'>;
     updatedAt: Schema.Attribute.DateTime;
     updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
       Schema.Attribute.Private;
@@ -463,7 +496,7 @@ export interface ApiArticleArticle extends Struct.CollectionTypeSchema {
 export interface ApiMenuMenu extends Struct.CollectionTypeSchema {
   collectionName: 'menus';
   info: {
-    displayName: '\u76EE\u5F55';
+    displayName: 'menu';
     pluralName: 'menus';
     singularName: 'menu';
   };
@@ -474,15 +507,21 @@ export interface ApiMenuMenu extends Struct.CollectionTypeSchema {
     createdAt: Schema.Attribute.DateTime;
     createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
       Schema.Attribute.Private;
-    Directory: Schema.Attribute.Relation<'oneToOne', 'api::menu.menu'>;
     locale: Schema.Attribute.String & Schema.Attribute.Private;
     localizations: Schema.Attribute.Relation<'oneToMany', 'api::menu.menu'> &
       Schema.Attribute.Private;
+    menu: Schema.Attribute.Relation<'manyToOne', 'api::menu.menu'>;
+    menus: Schema.Attribute.Relation<'oneToMany', 'api::menu.menu'>;
     publishedAt: Schema.Attribute.DateTime;
-    Title: Schema.Attribute.String;
+    title: Schema.Attribute.String &
+      Schema.Attribute.Required &
+      Schema.Attribute.Unique;
     updatedAt: Schema.Attribute.DateTime;
     updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
       Schema.Attribute.Private;
+    value: Schema.Attribute.String &
+      Schema.Attribute.Required &
+      Schema.Attribute.Unique;
   };
 }
 
@@ -998,6 +1037,7 @@ declare module '@strapi/strapi' {
       'admin::transfer-token-permission': AdminTransferTokenPermission;
       'admin::user': AdminUser;
       'api::article.article': ApiArticleArticle;
+      'api::documatioin.documatioin': ApiDocumatioinDocumatioin;
       'api::menu.menu': ApiMenuMenu;
       'plugin::content-releases.release': PluginContentReleasesRelease;
       'plugin::content-releases.release-action': PluginContentReleasesReleaseAction;

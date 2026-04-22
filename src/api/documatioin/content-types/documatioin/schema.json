@@ -1,0 +1,26 @@
+{
+  "kind": "collectionType",
+  "collectionName": "documatioins",
+  "info": {
+    "singularName": "documatioin",
+    "pluralName": "documatioins",
+    "displayName": "documatioin"
+  },
+  "options": {
+    "draftAndPublish": true
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "title": {
+      "type": "string",
+      "default": "这是默认的标题...",
+      "required": true,
+      "unique": true
+    },
+    "content": {
+      "type": "richtext",
+      "required": true,
+      "default": "这是默认的内容..."
+    }
+  }
+}

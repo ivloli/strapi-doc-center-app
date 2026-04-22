@@ -11,16 +11,11 @@
   },
   "pluginOptions": {},
   "attributes": {
-    "Title": {
+    "title": {
       "type": "string"
     },
-    "Content": {
+    "content": {
       "type": "richtext"
-    },
-    "Directory": {
-      "type": "relation",
-      "relation": "oneToOne",
-      "target": "api::menu.menu"
     }
   }
 }
