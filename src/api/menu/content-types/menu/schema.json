@@ -25,13 +25,18 @@
       "type": "relation",
       "relation": "manyToOne",
       "target": "api::menu.menu",
-      "inversedBy": "menus"
+      "inversedBy": "children"
     },
-    "menus": {
+    "children": {
       "type": "relation",
       "relation": "oneToMany",
       "target": "api::menu.menu",
       "mappedBy": "menu"
+    },
+    "docId": {
+      "type": "string",
+      "required": false,
+      "unique": true
     }
   }
 }

@@ -1,0 +1,14 @@
+{
+  "kind": "collectionType",
+  "collectionName": "custom_docs",
+  "info": {
+    "singularName": "custom-doc",
+    "pluralName": "custom-docs",
+    "displayName": "customDoc"
+  },
+  "options": {
+    "draftAndPublish": true
+  },
+  "pluginOptions": {},
+  "attributes": {}
+}
