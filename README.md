@@ -52,6 +52,8 @@ Then start the service:
 make restart
 ```
 
+If you front Strapi with `nginx`, use `nginx/strapi-doc-center.conf` as the template: it proxies only `/api/` to Strapi on `127.0.0.1:1337`, while the admin panel can stay internal at `http://172.31.36.140:1337/admin`.
+
 ## Make Commands
 
 | Command | Description |
@@ -131,3 +133,8 @@ make uninstall
 ```
 
 Stops and removes the systemd service. The app directory and `.env` are preserved.
+
+## Troubleshooting Notes
+
+- CORS / same-domain API gateway case: `docs/cors-resolution-2026-05.md`
+- New machine deploy checks (PostgreSQL + MinIO/S3): `docs/deploy-pg-s3-checklist.md`
