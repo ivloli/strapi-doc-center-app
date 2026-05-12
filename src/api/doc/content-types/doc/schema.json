@@ -24,11 +24,6 @@
     "content": {
       "type": "richtext",
       "required": true
-    },
-    "product": {
-      "type": "relation",
-      "relation": "oneToOne",
-      "target": "api::product.product"
     }
   }
 }
