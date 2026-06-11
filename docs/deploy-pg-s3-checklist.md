@@ -97,9 +97,7 @@ cat > /tmp/strapi-policy.json << 'EOF'
       "Action": "s3:ListBucket",
       "Resource": "arn:aws:s3:::files",
       "Condition": {
-        "StringLike": {
-          "s3:prefix": ["strapi", "strapi/", "strapi/*"]
-        }
+        "StringLike": { "s3:prefix": "strapi/*" }
       }
     }
   ]
@@ -116,8 +114,6 @@ mcli admin policy attach myminio-root strapi-policy --user strapi-user
 ```
 
 Then update `.env` with this user/password and keep `S3_ROOT_PATH=strapi`.
-
-Note: keeping only `strapi/*` may break `ls s3://files/strapi` style requests from some clients because they send `strapi` or `strapi/` as the list prefix.
 
 ## 5) App-level validation
 

@@ -95,9 +95,7 @@ cat > /tmp/strapi-policy.json << 'EOF'
       "Action": "s3:ListBucket",
       "Resource": "arn:aws:s3:::files",
       "Condition": {
-        "StringLike": {
-          "s3:prefix": ["strapi", "strapi/", "strapi/*"]
-        }
+        "StringLike": { "s3:prefix": "strapi/*" }
       }
     }
   ]
@@ -110,8 +108,6 @@ mcli admin policy attach myminio-root strapi-policy --user strapi-user
 ```
 
 Set `S3_ROOT_PATH=strapi` in `.env` to scope uploads to this prefix.
-
-Use all three `s3:prefix` variants above because some S3 clients list with `strapi` or `strapi/`, not only `strapi/*`.
 
 ## Development Mode
 
@@ -142,4 +138,3 @@ Stops and removes the systemd service. The app directory and `.env` are preserve
 
 - CORS / same-domain API gateway case: `docs/cors-resolution-2026-05.md`
 - New machine deploy checks (PostgreSQL + MinIO/S3): `docs/deploy-pg-s3-checklist.md`
-- Chinese full deploy/ops guide: `docs/zh-deploy-and-ops-guide.md`
