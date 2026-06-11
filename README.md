@@ -43,6 +43,7 @@ Key values to fill in:
 | `TRANSFER_TOKEN_SALT` | Random secret |
 | `JWT_SECRET` | Random secret |
 | `S3_ENDPOINT` | MinIO endpoint (use server LAN IP, not 127.0.0.1) |
+| `S3_BASE_URL` | Public file base URL, usually the HTTPS reverse-proxy path |
 | `S3_ACCESS_KEY_ID` | MinIO access key |
 | `S3_SECRET_ACCESS_KEY` | MinIO secret key |
 
@@ -52,7 +53,107 @@ Then start the service:
 make restart
 ```
 
-If you front Strapi with `nginx`, use `nginx/strapi-doc-center.conf` as the template: it proxies only `/api/` to Strapi on `127.0.0.1:1337`, while the admin panel can stay internal at `http://172.31.36.140:1337/admin`.
+If you front Strapi with `nginx`, use `nginx/strapi-doc-center.conf` as the template. For same-domain admin and MinIO file access, keep `ADMIN_PATH=/admin` and proxy the admin, API, and file paths separately.
+
+Recommended `.env` values for MinIO behind HTTPS reverse proxy:
+
+```bash
+ADMIN_PATH=/admin
+S3_ENDPOINT=http://<minio-lan-ip>:9100
+S3_BASE_URL=https://help.test.starviewcloud.com/help-apis/v1/doc-center-files
+S3_BUCKET=files
+S3_ROOT_PATH=strapi
+```
+
+Recommended `nginx` locations in the `help.test.starviewcloud.com` server:
+
+```nginx
+location ^~ /help-apis/v1/doc-center/ {
+    proxy_pass http://127.0.0.1:1337/api/;
+    proxy_http_version 1.1;
+    include /etc/nginx/proxy_params;
+    proxy_set_header X-Forwarded-Host $host;
+    proxy_set_header X-Forwarded-Port $server_port;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_redirect off;
+}
+
+location ^~ /help-apis/v1/doc-center-files/ {
+    proxy_pass http://<minio-lan-ip>:9100/files/;
+    proxy_http_version 1.1;
+    proxy_set_header Host <minio-lan-ip>:9100;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header Connection "";
+    proxy_connect_timeout 5s;
+    proxy_send_timeout 60s;
+    proxy_read_timeout 60s;
+    proxy_redirect off;
+}
+
+location = /admin {
+    proxy_pass http://127.0.0.1:1337/admin;
+    proxy_http_version 1.1;
+    include /etc/nginx/proxy_params;
+    proxy_set_header X-Forwarded-Host $host;
+    proxy_set_header X-Forwarded-Port $server_port;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_redirect off;
+}
+
+location ^~ /admin/ {
+    proxy_pass http://127.0.0.1:1337/admin/;
+    proxy_http_version 1.1;
+    include /etc/nginx/proxy_params;
+    proxy_set_header X-Forwarded-Host $host;
+    proxy_set_header X-Forwarded-Port $server_port;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_redirect off;
+}
+
+location ^~ /content-manager/ {
+    proxy_pass http://127.0.0.1:1337/content-manager/;
+    proxy_http_version 1.1;
+    include /etc/nginx/proxy_params;
+    proxy_set_header X-Forwarded-Host $host;
+    proxy_set_header X-Forwarded-Port $server_port;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_redirect off;
+}
+
+location ^~ /upload/ {
+    proxy_pass http://127.0.0.1:1337/upload/;
+    proxy_http_version 1.1;
+    include /etc/nginx/proxy_params;
+    proxy_set_header X-Forwarded-Host $host;
+    proxy_set_header X-Forwarded-Port $server_port;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_redirect off;
+}
+
+location ^~ /users-permissions/ {
+    proxy_pass http://127.0.0.1:1337/users-permissions/;
+    proxy_http_version 1.1;
+    include /etc/nginx/proxy_params;
+    proxy_set_header X-Forwarded-Host $host;
+    proxy_set_header X-Forwarded-Port $server_port;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_redirect off;
+}
+
+location ^~ /content-type-builder/ {
+    proxy_pass http://127.0.0.1:1337/content-type-builder/;
+    proxy_http_version 1.1;
+    include /etc/nginx/proxy_params;
+    proxy_set_header X-Forwarded-Host $host;
+    proxy_set_header X-Forwarded-Port $server_port;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_redirect off;
+}
+```
+
+Open the admin from the domain URL, not `http://<public-ip>:1337`, to avoid browser-side cross-origin requests for media preview/download.
 
 ## Make Commands
 
@@ -110,6 +211,8 @@ mcli admin policy attach myminio-root strapi-policy --user strapi-user
 ```
 
 Set `S3_ROOT_PATH=strapi` in `.env` to scope uploads to this prefix.
+
+If MinIO is not publicly reachable, also set `S3_BASE_URL` to the reverse-proxy file path and keep `S3_ENDPOINT` pointing to the LAN MinIO address.
 
 Use all three `s3:prefix` variants above because some S3 clients list with `strapi` or `strapi/`, not only `strapi/*`.
 

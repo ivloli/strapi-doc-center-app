@@ -14,6 +14,7 @@ DATABASE_URL=postgresql://<user>:<password>@<pg-host>:5432/<db>?sslmode=disable&
 DATABASE_SSL=false
 
 S3_ENDPOINT=http://<minio-host>:9100
+S3_BASE_URL=https://help.test.starviewcloud.com/help-apis/v1/doc-center-files
 S3_ACCESS_KEY_ID=<minio-user>
 S3_SECRET_ACCESS_KEY=<minio-password>
 S3_BUCKET=files
@@ -21,6 +22,7 @@ S3_USE_SSL=false
 S3_FORCE_PATH_STYLE=true
 S3_REGION=us-east-1
 S3_ROOT_PATH=strapi
+ADMIN_PATH=/admin
 ```
 
 ## 2) PostgreSQL connectivity checks
@@ -120,6 +122,98 @@ Then update `.env` with this user/password and keep `S3_ROOT_PATH=strapi`.
 Note: keeping only `strapi/*` may break `ls s3://files/strapi` style requests from some clients because they send `strapi` or `strapi/` as the list prefix.
 
 ## 5) App-level validation
+
+### 5.0 Reverse-proxy validation for same-domain admin and media
+
+If `9100` is not publicly exposed, keep `S3_ENDPOINT` on the MinIO LAN address and publish files via HTTPS reverse proxy instead. Recommended `nginx` locations:
+
+```nginx
+location ^~ /help-apis/v1/doc-center/ {
+    proxy_pass http://127.0.0.1:1337/api/;
+    proxy_http_version 1.1;
+    include /etc/nginx/proxy_params;
+    proxy_set_header X-Forwarded-Host $host;
+    proxy_set_header X-Forwarded-Port $server_port;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_redirect off;
+}
+
+location ^~ /help-apis/v1/doc-center-files/ {
+    proxy_pass http://<minio-host>:9100/files/;
+    proxy_http_version 1.1;
+    proxy_set_header Host <minio-host>:9100;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header Connection "";
+    proxy_connect_timeout 5s;
+    proxy_send_timeout 60s;
+    proxy_read_timeout 60s;
+    proxy_redirect off;
+}
+
+location = /admin {
+    proxy_pass http://127.0.0.1:1337/admin;
+    proxy_http_version 1.1;
+    include /etc/nginx/proxy_params;
+    proxy_set_header X-Forwarded-Host $host;
+    proxy_set_header X-Forwarded-Port $server_port;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_redirect off;
+}
+
+location ^~ /admin/ {
+    proxy_pass http://127.0.0.1:1337/admin/;
+    proxy_http_version 1.1;
+    include /etc/nginx/proxy_params;
+    proxy_set_header X-Forwarded-Host $host;
+    proxy_set_header X-Forwarded-Port $server_port;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_redirect off;
+}
+
+location ^~ /content-manager/ {
+    proxy_pass http://127.0.0.1:1337/content-manager/;
+    proxy_http_version 1.1;
+    include /etc/nginx/proxy_params;
+    proxy_set_header X-Forwarded-Host $host;
+    proxy_set_header X-Forwarded-Port $server_port;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_redirect off;
+}
+
+location ^~ /upload/ {
+    proxy_pass http://127.0.0.1:1337/upload/;
+    proxy_http_version 1.1;
+    include /etc/nginx/proxy_params;
+    proxy_set_header X-Forwarded-Host $host;
+    proxy_set_header X-Forwarded-Port $server_port;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_redirect off;
+}
+
+location ^~ /users-permissions/ {
+    proxy_pass http://127.0.0.1:1337/users-permissions/;
+    proxy_http_version 1.1;
+    include /etc/nginx/proxy_params;
+    proxy_set_header X-Forwarded-Host $host;
+    proxy_set_header X-Forwarded-Port $server_port;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_redirect off;
+}
+
+location ^~ /content-type-builder/ {
+    proxy_pass http://127.0.0.1:1337/content-type-builder/;
+    proxy_http_version 1.1;
+    include /etc/nginx/proxy_params;
+    proxy_set_header X-Forwarded-Host $host;
+    proxy_set_header X-Forwarded-Port $server_port;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_redirect off;
+}
+```
+
+Open the admin from `https://help.test.starviewcloud.com/admin`, not `http://<public-ip>:1337`, otherwise browser-side media preview/download requests become cross-origin.
 
 After `npm ci`, start Strapi and verify no DB/S3 initialization errors:
 
