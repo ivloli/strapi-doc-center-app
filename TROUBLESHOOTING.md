@@ -198,3 +198,57 @@ psql "$DATABASE_URL" -c "UPDATE files SET url = REPLACE(url, 'http://127.0.0.1:9
   },
 },
 ```
+
+---
+
+### 12. `S3_BASE_URL` 已切换但图片仍然 400 / 无法加载
+
+**问题**：Strapi 已改为支持 `S3_BASE_URL`，并将媒体 URL 生成为 `https://help.test.starviewcloud.com/help-apis/v1/doc-center-files/strapi/...`，但浏览器访问仍返回 `400`。
+
+**排查结论**：
+
+- MinIO 直连 `http://10.0.25.221:9100/files/strapi/...` 返回 `200`
+- `nginx` 里的 `location ^~ /help-apis/v1/doc-center-files/` 已命中
+- 根因是该 `location` 里 `include /etc/nginx/proxy_params;`，而 `/etc/nginx/proxy_params` 会设置：
+
+```nginx
+proxy_set_header Host $http_host;
+```
+
+这会把外部域名 `help.test.starviewcloud.com` 透传给 MinIO，导致 MinIO 返回 `400`。
+
+**修复**：该 `location` 不要再 `include /etc/nginx/proxy_params;`，改为手写一组最小代理头：
+
+```nginx
+location ^~ /help-apis/v1/doc-center-files/ {
+    proxy_pass http://10.0.25.221:9100/files/;
+    proxy_http_version 1.1;
+    proxy_set_header Host 10.0.25.221:9100;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header Connection "";
+    proxy_connect_timeout 5s;
+    proxy_send_timeout 60s;
+    proxy_read_timeout 60s;
+    proxy_redirect off;
+}
+```
+
+**对应 `.env`**：
+
+```env
+S3_ENDPOINT=http://10.0.25.221:9100
+S3_BASE_URL=https://help.test.starviewcloud.com/help-apis/v1/doc-center-files
+S3_BUCKET=files
+S3_ROOT_PATH=strapi
+```
+
+**验证命令**：
+
+```bash
+curl -I 'http://10.0.25.221:9100/files/strapi/<file>'
+curl -kI --resolve help.test.starviewcloud.com:443:127.0.0.1 'https://help.test.starviewcloud.com/help-apis/v1/doc-center-files/strapi/<file>'
+```
+
+如果第一条 `200`、第二条 `400`，优先检查 `proxy_params` 是否又覆盖了 `Host`。
