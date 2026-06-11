@@ -2,7 +2,6 @@ import type { Core } from '@strapi/strapi';
 
 const config = ({ env }: Core.Config.Shared.ConfigParams): Core.Config.Plugin => {
   const endpointRaw = env('S3_ENDPOINT', env('MINIO_ENDPOINT', ''));
-  const baseUrl = env('S3_BASE_URL', '').trim() || undefined;
   const useSsl = env.bool('S3_USE_SSL', env.bool('MINIO_USE_SSL', true));
   const endpoint = endpointRaw
     ? endpointRaw.startsWith('http://') || endpointRaw.startsWith('https://')
@@ -15,7 +14,6 @@ const config = ({ env }: Core.Config.Shared.ConfigParams): Core.Config.Plugin =>
       config: {
         provider: 'aws-s3',
         providerOptions: {
-          baseUrl,
           s3Options: {
             credentials: {
               accessKeyId: env('S3_ACCESS_KEY_ID', env('AWS_ACCESS_KEY_ID')),
