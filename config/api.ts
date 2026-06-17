@@ -1,11 +1,7 @@
-import type { Core } from '@strapi/strapi';
-
-const config: Core.Config.Api = {
+export default {
   rest: {
     defaultLimit: 25,
     maxLimit: 5000,
     withCount: true,
   },
 };
-
-export default config;
