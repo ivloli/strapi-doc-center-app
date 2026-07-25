@@ -17,10 +17,10 @@
   "dependencies": {
     "@strapi/plugin-cloud": "5.42.1",
     "@strapi/plugin-users-permissions": "5.42.1",
-    "@strapi/provider-upload-aws-s3": "^5.42.1",
+    "@strapi/provider-upload-aws-s3": "^5.48.0",
     "@strapi/strapi": "5.42.1",
     "better-sqlite3": "12.8.0",
-    "pg": "^8.20.0",
+    "pg": "^8.21.0",
     "react": "^18.0.0",
     "react-dom": "^18.0.0",
     "react-router-dom": "^6.0.0",

@@ -6,3 +6,6 @@ build/
 .env
 .deploy.mk
 .DS_Store
+search-service/bin/
+search-service/.env
+search-service/meilisearch.env
