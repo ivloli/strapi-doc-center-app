@@ -42,6 +42,7 @@ type config struct {
 
 type indexedDocument struct {
 	ID            string `json:"id"`
+	DocID         string `json:"docId"`
 	Title         string `json:"title"`
 	Content       string `json:"content"`
 	URL           string `json:"url"`
@@ -50,6 +51,7 @@ type indexedDocument struct {
 
 type sourceMetadata struct {
 	ID            string
+	DocID         string
 	URL           string
 	SourceVersion string
 }
@@ -107,6 +109,7 @@ type formattedSearchHit struct {
 
 type searchHit struct {
 	ID        string              `json:"id" example:"quick-start"`
+	DocID     string              `json:"docId" example:"API KEY使用指引"`
 	Title     string              `json:"title" example:"快速开始"`
 	Content   string              `json:"content" example:"完成产品配置的入门文档。"`
 	URL       string              `json:"url" example:"/quick-start"`
@@ -398,13 +401,13 @@ func (s *service) syncLocked(ctx context.Context) error {
 		return err
 	}
 
-	changedIDs := make([]string, 0)
+	changedDocIDs := make([]string, 0)
 	for id, metadata := range source {
 		if indexedMetadata, found := indexed[id]; !found || indexedMetadata.SourceVersion != metadata.SourceVersion {
-			changedIDs = append(changedIDs, id)
+			changedDocIDs = append(changedDocIDs, metadata.DocID)
 		}
 	}
-	documents, err := s.readDocuments(ctx, changedIDs)
+	documents, err := s.readDocuments(ctx, changedDocIDs)
 	if err != nil {
 		return err
 	}
@@ -436,8 +439,9 @@ func (s *service) syncDocument(ctx context.Context, docID string) error {
 	if err != nil {
 		return err
 	}
-	if _, found := source[docID]; !found {
-		return s.meili.deleteDocuments(ctx, s.config.index, []string{docID})
+	indexID := documentIndexID(docID)
+	if _, found := source[indexID]; !found {
+		return s.meili.deleteDocuments(ctx, s.config.index, []string{indexID})
 	}
 	documents, err := s.readDocuments(ctx, []string{docID})
 	if err != nil {
@@ -495,8 +499,10 @@ WHERE d.published_at IS NOT NULL
 			log.Printf("skip source document %q without a menu URL", id.String)
 			continue
 		}
-		metadata[id.String] = sourceMetadata{
-			ID:            id.String,
+		indexID := documentIndexID(id.String)
+		metadata[indexID] = sourceMetadata{
+			ID:            indexID,
+			DocID:         id.String,
 			URL:           url.String,
 			SourceVersion: sourceVersion(id.String, timestampValue(docUpdatedAt), url.String, timestampValue(menuUpdatedAt)),
 		}
@@ -538,7 +544,8 @@ ORDER BY d.doc_id`
 			continue
 		}
 		documents = append(documents, indexedDocument{
-			ID:            id.String,
+			ID:            documentIndexID(id.String),
+			DocID:         id.String,
 			Title:         textValue(title),
 			Content:       document.PlainText(textValue(content)),
 			URL:           url.String,
@@ -561,6 +568,12 @@ func sourceVersion(docID string, docUpdatedAt *string, url string, menuUpdatedAt
 	}{docID, docUpdatedAt, url, menuUpdatedAt})
 	sum := sha256.Sum256(payload)
 	return hex.EncodeToString(sum[:])
+}
+
+// documentIndexID converts an arbitrary Strapi docId into a Meilisearch-safe primary key.
+func documentIndexID(docID string) string {
+	sum := sha256.Sum256([]byte(docID))
+	return "doc_" + hex.EncodeToString(sum[:])
 }
 
 // timestampValue 规范化可空时间戳，避免时区格式差异造成无效索引更新。
@@ -604,7 +617,7 @@ func (m *meiliClient) createIndex(ctx context.Context, index string) error {
 func (m *meiliClient) configureIndex(ctx context.Context, index string) error {
 	task, err := m.client.Index(index).UpdateSettingsWithContext(ctx, &meilisearch.Settings{
 		SearchableAttributes: []string{"title", "content"},
-		DisplayedAttributes:  []string{"id", "title", "content", "url", "sourceVersion"},
+		DisplayedAttributes:  []string{"id", "docId", "title", "content", "url", "sourceVersion"},
 	})
 	if err != nil {
 		return fmt.Errorf("configure index: %w", err)

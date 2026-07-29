@@ -247,6 +247,10 @@
                     "type": "string",
                     "example": "完成产品配置的入门文档。"
                 },
+                "docId": {
+                    "type": "string",
+                    "example": "API KEY使用指引"
+                },
                 "id": {
                     "type": "string",
                     "example": "quick-start"

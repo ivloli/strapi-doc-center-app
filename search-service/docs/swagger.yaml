@@ -76,6 +76,9 @@ definitions:
       content:
         example: 完成产品配置的入门文档。
         type: string
+      docId:
+        example: API KEY使用指引
+        type: string
       id:
         example: quick-start
         type: string

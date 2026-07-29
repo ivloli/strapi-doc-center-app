@@ -20,7 +20,7 @@ WHERE d.published_at IS NOT NULL
   AND m.published_at IS NOT NULL;
 ```
 
-The reconciliation first compares a SHA-256 `sourceVersion` calculated from `docId`, document and menu update times, and URL. Only new or changed IDs trigger a second query for title and content. Missing IDs are deleted from Meilisearch. Verify the physical table and column names against the production Strapi v5 database before deployment.
+The reconciliation first compares a SHA-256 `sourceVersion` calculated from `docId`, document and menu update times, and URL. Meilisearch receives a separate safe primary key derived from the SHA-256 of `docId`, so Chinese or special-character document IDs remain supported. Only new or changed IDs trigger a second query for title and content. Missing IDs are deleted from Meilisearch. Verify the physical table and column names against the production Strapi v5 database before deployment.
 
 ## Local Run
 

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"testing"
 )
 
@@ -17,6 +18,20 @@ func TestSourceVersionHandlesMissingTimestamps(t *testing.T) {
 	}
 	if version == sourceVersion("doc-1", nil, "/getting-started", nil) {
 		t.Fatal("sourceVersion() did not change when the URL changed")
+	}
+}
+
+func TestDocumentIndexIDSupportsChineseDocID(t *testing.T) {
+	docID := "API KEY使用指引"
+	indexID := documentIndexID(docID)
+	if indexID != documentIndexID(docID) {
+		t.Fatal("documentIndexID() is not stable")
+	}
+	if !regexp.MustCompile(`^doc_[a-f0-9]{64}$`).MatchString(indexID) {
+		t.Fatalf("documentIndexID() = %q, want a Meilisearch-safe identifier", indexID)
+	}
+	if indexID == documentIndexID("API KEY使用指引 2") {
+		t.Fatal("documentIndexID() did not change for a different docId")
 	}
 }
 
