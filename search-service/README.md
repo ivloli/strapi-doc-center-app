@@ -88,6 +88,8 @@ The script runs the pinned `swaggo/swag` generator without requiring a globally 
 
 The search service has its own Makefile. Do not run these commands from the Strapi repository root: `cd search-service` first. The commands below target Ubuntu and use systemd.
 
+See [MAKE_USAGE.md](MAKE_USAGE.md) for the complete target-host, operations, and Jenkins command reference.
+
 ### Target Host
 
 ```bash
