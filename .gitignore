@@ -9,3 +9,4 @@ build/
 search-service/bin/
 search-service/.env
 search-service/meilisearch.env
+search-service/release/

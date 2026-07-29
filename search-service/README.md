@@ -86,18 +86,19 @@ The script runs the pinned `swaggo/swag` generator without requiring a globally 
 
 ## Deployment
 
-Deploy the search service and Meilisearch separately from Strapi. The commands below target Ubuntu and use systemd.
+The search service has its own Makefile. Do not run these commands from the Strapi repository root: `cd search-service` first. The commands below target Ubuntu and use systemd.
 
-### 1. Install Go and Meilisearch
+### Target Host
 
 ```bash
+git pull
 cd search-service
-cp .env.example .env
-make install-go
-make install-meilisearch
+make deploy
 ```
 
-Create `meilisearch.env` beside the Makefile with a unique master key:
+`make deploy` verifies the existing Go 1.25+ installation, installs required Ubuntu tools and Meilisearch, downloads Go module dependencies, compiles the Linux binary, and registers both systemd units. It does not start them until the secret configuration is complete.
+
+Set a unique Meilisearch master key in `meilisearch.env`:
 
 ```bash
 MEILI_MASTER_KEY=<long-random-secret>
@@ -105,24 +106,18 @@ MEILI_MASTER_KEY=<long-random-secret>
 
 For example, generate the two service secrets with `openssl rand -hex 32`; use one as `MEILI_MASTER_KEY` and another as `SEARCH_SYNC_TOKEN`.
 
-Then install and start both services:
+Set `DATABASE_URL`, `SEARCH_SYNC_TOKEN`, and the other Search Service settings in `.env`. Then start Meilisearch and create the restricted service API key:
 
 ```bash
-make write-meili-service
-make meili-restart
-make build
-make write-service
-make restart
+make meili-start
+make create-meili-key
+# Copy the returned "key" value into MEILI_API_KEY in .env.
+make start
 ```
 
 Meilisearch listens on `127.0.0.1:7700` and persists data in `/var/lib/doc-search-meilisearch`. Do not expose its port publicly. Point Nginx or the load balancer at the Go service's `/search` route instead.
 
 Create a non-master Meilisearch API key scoped to `docs_public`, then set it as `MEILI_API_KEY` in `.env`. It needs index creation/read, settings update, document add/get/delete, task read, and search permissions. Restart the Go service after updating `.env`.
-
-```bash
-make create-meili-key
-# Copy the returned "key" value into MEILI_API_KEY in .env.
-```
 
 Set the same random `SEARCH_SYNC_TOKEN` in both `search-service/.env` and the root Strapi `.env`. Set the root `SEARCH_SYNC_URL` to `http://127.0.0.1:8080/internal/sync` when both services share a host, then restart Strapi.
 
@@ -138,6 +133,19 @@ location /search {
 ```
 
 Use a dedicated PostgreSQL role. It needs `SELECT` access to `docs` and `menus`; it does not need access to Strapi write tables.
+
+## Jenkins Release
+
+Jenkins should only build and archive an artifact; it must not invoke `deploy`, `register-service`, or any target using `sudo`.
+
+```bash
+cd search-service
+make test vet swagger
+make release-package TARGET_OS=linux TARGET_ARCH=amd64 RELEASE_TAG="$BUILD_TAG"
+make release-checksum TARGET_OS=linux TARGET_ARCH=amd64 RELEASE_TAG="$BUILD_TAG"
+```
+
+The artifact is written below `search-service/release/` and contains a Linux binary, Swagger files, environment templates, and deployment documentation. A target host can unpack it, set the two environment files, and use the included Makefile's `register-service` and `register-meili-service` commands.
 
 ## Consistency
 
