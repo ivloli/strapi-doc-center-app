@@ -63,16 +63,41 @@ type syncRequest struct {
 	DocID string `json:"docId"`
 }
 
-type healthResponse struct {
+type searchListRequest struct {
+	Keyword    string            `json:"keyword" example:"快速开始"`
+	Pagination paginationRequest `json:"pagination"`
+}
+
+type paginationRequest struct {
+	Page     int `json:"page" example:"1"`
+	PageSize int `json:"pageSize" example:"20"`
+	Total    int `json:"total,omitempty" example:"0"`
+}
+
+type healthData struct {
 	Status string `json:"status" example:"ok"`
 }
 
+type healthResponse struct {
+	Code    int        `json:"code" example:"200"`
+	Message string     `json:"message" example:"success"`
+	Data    healthData `json:"data"`
+}
+
 type errorResponse struct {
-	Message string `json:"message" example:"search is temporarily unavailable"`
+	Code    int    `json:"code" example:"400"`
+	Message string `json:"message" example:"keyword is required"`
+	Data    any    `json:"data"`
+}
+
+type syncData struct {
+	Status string `json:"status" example:"synced"`
 }
 
 type syncResponse struct {
-	Status string `json:"status" example:"synced"`
+	Code    int      `json:"code" example:"200"`
+	Message string   `json:"message" example:"success"`
+	Data    syncData `json:"data"`
 }
 
 type formattedSearchHit struct {
@@ -88,12 +113,21 @@ type searchHit struct {
 	Formatted *formattedSearchHit `json:"_formatted,omitempty"`
 }
 
+type pagination struct {
+	Page     int    `json:"page" example:"1"`
+	PageSize int    `json:"pageSize" example:"20"`
+	Total    string `json:"total" example:"7"`
+}
+
+type searchData struct {
+	List       []searchHit `json:"list"`
+	Pagination pagination  `json:"pagination"`
+}
+
 type searchResponse struct {
-	Hits       []searchHit `json:"hits"`
-	Page       int         `json:"page" example:"1"`
-	PageSize   int         `json:"pageSize" example:"20"`
-	TotalHits  int         `json:"totalHits" example:"1"`
-	TotalPages int         `json:"totalPages" example:"1"`
+	Code    int        `json:"code" example:"200"`
+	Message string     `json:"message" example:"success"`
+	Data    searchData `json:"data"`
 }
 
 type meiliClient struct {
@@ -209,7 +243,7 @@ func newMeiliClient(baseURL, key string) *meiliClient {
 func (s *service) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.health)
-	mux.HandleFunc("GET /search", s.search)
+	mux.HandleFunc("POST /search/list", s.search)
 	mux.HandleFunc("POST /internal/sync", s.internalSync)
 	mux.Handle("GET /swagger/", httpSwagger.WrapHandler)
 	return mux
@@ -223,29 +257,39 @@ func (s *service) routes() http.Handler {
 // @Success 200 {object} healthResponse
 // @Router /healthz [get]
 func (s *service) health(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	writeJSON(w, http.StatusOK, healthResponse{
+		Code:    http.StatusOK,
+		Message: "success",
+		Data:    healthData{Status: "ok"},
+	})
 }
 
 // search 查询 Meilisearch 并标准化分页响应。
 // @Summary 搜索公开文档
 // @Description 在标题和正文中搜索已发布且具有已发布菜单路径的文档。
 // @Tags 搜索
+// @Accept json
 // @Produce json
-// @Param q query string true "搜索关键词"
-// @Param page query int false "页码，默认 1" default(1)
-// @Param pageSize query int false "每页数量，默认 20，最大 100" default(20)
+// @Param request body searchListRequest true "搜索条件与分页参数"
 // @Success 200 {object} searchResponse
 // @Failure 400 {object} errorResponse
 // @Failure 503 {object} errorResponse
-// @Router /search [get]
+// @Router /search/list [post]
 func (s *service) search(w http.ResponseWriter, r *http.Request) {
-	query := strings.TrimSpace(r.URL.Query().Get("q"))
-	if query == "" {
-		writeError(w, http.StatusBadRequest, "q is required")
+	var request searchListRequest
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&request); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	page := positiveInt(r.URL.Query().Get("page"), 1, 1, 100000)
-	pageSize := positiveInt(r.URL.Query().Get("pageSize"), 20, 1, 100)
+	query := strings.TrimSpace(request.Keyword)
+	if query == "" {
+		writeError(w, http.StatusBadRequest, "keyword is required")
+		return
+	}
+	page := boundedInt(request.Pagination.Page, 1, 1, 100000)
+	pageSize := boundedInt(request.Pagination.PageSize, 20, 1, 100)
 
 	result, err := s.meili.search(r.Context(), s.config.index, query, page, pageSize)
 	if err != nil {
@@ -257,12 +301,23 @@ func (s *service) search(w http.ResponseWriter, r *http.Request) {
 	if total == 0 {
 		total = number(result["estimatedTotalHits"])
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"hits":       result["hits"],
-		"page":       page,
-		"pageSize":   pageSize,
-		"totalHits":  total,
-		"totalPages": (total + pageSize - 1) / pageSize,
+	hits, err := searchResultHits(result["hits"])
+	if err != nil {
+		log.Printf("decode search hits: %v", err)
+		writeError(w, http.StatusServiceUnavailable, "search result is temporarily unavailable")
+		return
+	}
+	writeJSON(w, http.StatusOK, searchResponse{
+		Code:    http.StatusOK,
+		Message: "success",
+		Data: searchData{
+			List: hits,
+			Pagination: pagination{
+				Page:     page,
+				PageSize: pageSize,
+				Total:    strconv.Itoa(total),
+			},
+		},
 	})
 }
 
@@ -302,7 +357,11 @@ func (s *service) internalSync(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "sync failed")
 		return
 	}
-	writeJSON(w, http.StatusOK, syncResponse{Status: "synced"})
+	writeJSON(w, http.StatusOK, syncResponse{
+		Code:    http.StatusOK,
+		Message: "success",
+		Data:    syncData{Status: "synced"},
+	})
 }
 
 // syncLoop 定期执行元数据对账，补偿 Hook 丢失、重启和硬删除场景。
@@ -657,6 +716,14 @@ func positiveInt(value string, fallback, min, max int) int {
 	return parsed
 }
 
+// boundedInt 将请求体中的整数限制在接口允许范围内，非法值回退为默认值。
+func boundedInt(value, fallback, min, max int) int {
+	if value < min || value > max {
+		return fallback
+	}
+	return value
+}
+
 // number 将 JSON 数值转换为分页计算所需的 int。
 func number(value any) int {
 	switch number := value.(type) {
@@ -672,6 +739,19 @@ func number(value any) int {
 	}
 }
 
+// searchResultHits 将 Meilisearch 动态命中结果转换为对外稳定的搜索条目。
+func searchResultHits(value any) ([]searchHit, error) {
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	var hits []searchHit
+	if err := json.Unmarshal(encoded, &hits); err != nil {
+		return nil, err
+	}
+	return hits, nil
+}
+
 // writeJSON 统一写入 JSON 响应及 HTTP 状态码。
 func writeJSON(w http.ResponseWriter, status int, body any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
@@ -681,5 +761,5 @@ func writeJSON(w http.ResponseWriter, status int, body any) {
 
 // writeError 以统一 JSON 结构返回客户端可读的错误消息。
 func writeError(w http.ResponseWriter, status int, message string) {
-	writeJSON(w, status, errorResponse{Message: message})
+	writeJSON(w, status, errorResponse{Code: status, Message: message, Data: nil})
 }

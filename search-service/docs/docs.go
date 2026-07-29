@@ -92,9 +92,12 @@ const docTemplate = `{
                 }
             }
         },
-        "/search": {
-            "get": {
+        "/search/list": {
+            "post": {
                 "description": "在标题和正文中搜索已发布且具有已发布菜单路径的文档。",
+                "consumes": [
+                    "application/json"
+                ],
                 "produces": [
                     "application/json"
                 ],
@@ -104,25 +107,13 @@ const docTemplate = `{
                 "summary": "搜索公开文档",
                 "parameters": [
                     {
-                        "type": "string",
-                        "description": "搜索关键词",
-                        "name": "q",
-                        "in": "query",
-                        "required": true
-                    },
-                    {
-                        "type": "integer",
-                        "default": 1,
-                        "description": "页码，默认 1",
-                        "name": "page",
-                        "in": "query"
-                    },
-                    {
-                        "type": "integer",
-                        "default": 20,
-                        "description": "每页数量，默认 20，最大 100",
-                        "name": "pageSize",
-                        "in": "query"
+                        "description": "搜索条件与分页参数",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/main.searchListRequest"
+                        }
                     }
                 ],
                 "responses": {
@@ -152,9 +143,14 @@ const docTemplate = `{
         "main.errorResponse": {
             "type": "object",
             "properties": {
+                "code": {
+                    "type": "integer",
+                    "example": 400
+                },
+                "data": {},
                 "message": {
                     "type": "string",
-                    "example": "search is temporarily unavailable"
+                    "example": "keyword is required"
                 }
             }
         },
@@ -171,12 +167,76 @@ const docTemplate = `{
                 }
             }
         },
-        "main.healthResponse": {
+        "main.healthData": {
             "type": "object",
             "properties": {
                 "status": {
                     "type": "string",
                     "example": "ok"
+                }
+            }
+        },
+        "main.healthResponse": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "integer",
+                    "example": 200
+                },
+                "data": {
+                    "$ref": "#/definitions/main.healthData"
+                },
+                "message": {
+                    "type": "string",
+                    "example": "success"
+                }
+            }
+        },
+        "main.pagination": {
+            "type": "object",
+            "properties": {
+                "page": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "pageSize": {
+                    "type": "integer",
+                    "example": 20
+                },
+                "total": {
+                    "type": "string",
+                    "example": "7"
+                }
+            }
+        },
+        "main.paginationRequest": {
+            "type": "object",
+            "properties": {
+                "page": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "pageSize": {
+                    "type": "integer",
+                    "example": 20
+                },
+                "total": {
+                    "type": "integer",
+                    "example": 0
+                }
+            }
+        },
+        "main.searchData": {
+            "type": "object",
+            "properties": {
+                "list": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/main.searchHit"
+                    }
+                },
+                "pagination": {
+                    "$ref": "#/definitions/main.pagination"
                 }
             }
         },
@@ -204,30 +264,40 @@ const docTemplate = `{
                 }
             }
         },
+        "main.searchListRequest": {
+            "type": "object",
+            "properties": {
+                "keyword": {
+                    "type": "string",
+                    "example": "快速开始"
+                },
+                "pagination": {
+                    "$ref": "#/definitions/main.paginationRequest"
+                }
+            }
+        },
         "main.searchResponse": {
             "type": "object",
             "properties": {
-                "hits": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/main.searchHit"
-                    }
-                },
-                "page": {
+                "code": {
                     "type": "integer",
-                    "example": 1
+                    "example": 200
                 },
-                "pageSize": {
-                    "type": "integer",
-                    "example": 20
+                "data": {
+                    "$ref": "#/definitions/main.searchData"
                 },
-                "totalHits": {
-                    "type": "integer",
-                    "example": 1
-                },
-                "totalPages": {
-                    "type": "integer",
-                    "example": 1
+                "message": {
+                    "type": "string",
+                    "example": "success"
+                }
+            }
+        },
+        "main.syncData": {
+            "type": "object",
+            "properties": {
+                "status": {
+                    "type": "string",
+                    "example": "synced"
                 }
             }
         },
@@ -242,9 +312,16 @@ const docTemplate = `{
         "main.syncResponse": {
             "type": "object",
             "properties": {
-                "status": {
+                "code": {
+                    "type": "integer",
+                    "example": 200
+                },
+                "data": {
+                    "$ref": "#/definitions/main.syncData"
+                },
+                "message": {
                     "type": "string",
-                    "example": "synced"
+                    "example": "success"
                 }
             }
         }

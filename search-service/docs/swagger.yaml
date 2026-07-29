@@ -2,8 +2,12 @@ basePath: /
 definitions:
   main.errorResponse:
     properties:
+      code:
+        example: 400
+        type: integer
+      data: {}
       message:
-        example: search is temporarily unavailable
+        example: keyword is required
         type: string
     type: object
   main.formattedSearchHit:
@@ -15,11 +19,55 @@ definitions:
         example: <mark>快速</mark>开始
         type: string
     type: object
-  main.healthResponse:
+  main.healthData:
     properties:
       status:
         example: ok
         type: string
+    type: object
+  main.healthResponse:
+    properties:
+      code:
+        example: 200
+        type: integer
+      data:
+        $ref: '#/definitions/main.healthData'
+      message:
+        example: success
+        type: string
+    type: object
+  main.pagination:
+    properties:
+      page:
+        example: 1
+        type: integer
+      pageSize:
+        example: 20
+        type: integer
+      total:
+        example: "7"
+        type: string
+    type: object
+  main.paginationRequest:
+    properties:
+      page:
+        example: 1
+        type: integer
+      pageSize:
+        example: 20
+        type: integer
+      total:
+        example: 0
+        type: integer
+    type: object
+  main.searchData:
+    properties:
+      list:
+        items:
+          $ref: '#/definitions/main.searchHit'
+        type: array
+      pagination:
+        $ref: '#/definitions/main.pagination'
     type: object
   main.searchHit:
     properties:
@@ -38,24 +86,30 @@ definitions:
         example: /quick-start
         type: string
     type: object
+  main.searchListRequest:
+    properties:
+      keyword:
+        example: 快速开始
+        type: string
+      pagination:
+        $ref: '#/definitions/main.paginationRequest'
+    type: object
   main.searchResponse:
     properties:
-      hits:
-        items:
-          $ref: '#/definitions/main.searchHit'
-        type: array
-      page:
-        example: 1
+      code:
+        example: 200
         type: integer
-      pageSize:
-        example: 20
-        type: integer
-      totalHits:
-        example: 1
-        type: integer
-      totalPages:
-        example: 1
-        type: integer
+      data:
+        $ref: '#/definitions/main.searchData'
+      message:
+        example: success
+        type: string
+    type: object
+  main.syncData:
+    properties:
+      status:
+        example: synced
+        type: string
     type: object
   main.syncRequest:
     properties:
@@ -64,8 +118,13 @@ definitions:
     type: object
   main.syncResponse:
     properties:
-      status:
-        example: synced
+      code:
+        example: 200
+        type: integer
+      data:
+        $ref: '#/definitions/main.syncData'
+      message:
+        example: success
         type: string
     type: object
 info:
@@ -123,25 +182,18 @@ paths:
       summary: 同步单篇文档索引
       tags:
       - 内部同步
-  /search:
-    get:
+  /search/list:
+    post:
+      consumes:
+      - application/json
       description: 在标题和正文中搜索已发布且具有已发布菜单路径的文档。
       parameters:
-      - description: 搜索关键词
-        in: query
-        name: q
+      - description: 搜索条件与分页参数
+        in: body
+        name: request
         required: true
-        type: string
-      - default: 1
-        description: 页码，默认 1
-        in: query
-        name: page
-        type: integer
-      - default: 20
-        description: 每页数量，默认 20，最大 100
-        in: query
-        name: pageSize
-        type: integer
+        schema:
+          $ref: '#/definitions/main.searchListRequest'
       produces:
       - application/json
       responses:

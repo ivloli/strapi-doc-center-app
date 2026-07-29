@@ -40,12 +40,39 @@ make build
 ## Search API
 
 ```text
-GET /search?q=keyword&page=1&pageSize=20
+POST /search/list
 GET /healthz
 POST /internal/sync
 ```
 
-`/search` returns Meilisearch-formatted hits. Highlighted `title` and cropped `content` live in each hit's `_formatted` object. Treat the `<mark>` tags as the only allowed markup and escape all other content before rendering.
+`/search/list` accepts a camelCase JSON request body and returns Meilisearch-formatted hits. Highlighted `title` and cropped `content` live in each hit's `_formatted` object. Treat the `<mark>` tags as the only allowed markup and escape all other content before rendering.
+
+```json
+{
+  "keyword": "快速开始",
+  "pagination": {
+    "page": 1,
+    "pageSize": 20
+  }
+}
+```
+
+All endpoints use the platform response envelope. The search result shape is:
+
+```json
+{
+  "code": 200,
+  "message": "success",
+  "data": {
+    "list": [],
+    "pagination": {
+      "page": 1,
+      "pageSize": 20,
+      "total": "0"
+    }
+  }
+}
+```
 
 ## Swagger
 
