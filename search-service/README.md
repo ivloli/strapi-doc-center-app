@@ -47,6 +47,16 @@ POST /internal/sync
 
 `/search` returns Meilisearch-formatted hits. Highlighted `title` and cropped `content` live in each hit's `_formatted` object. Treat the `<mark>` tags as the only allowed markup and escape all other content before rendering.
 
+## Swagger
+
+Generate OpenAPI documents and update the embedded Swagger metadata:
+
+```bash
+make swagger
+```
+
+The script runs the pinned `swaggo/swag` generator without requiring a globally installed binary. Generated files are written to `docs/swagger.json`, `docs/swagger.yaml`, and `docs/docs.go`. When the service is running, browse the interactive API documentation at `/swagger/index.html`.
+
 ## Deployment
 
 Deploy the search service and Meilisearch separately from Strapi. The commands below target Ubuntu and use systemd.

@@ -19,10 +19,12 @@ import (
 	"syscall"
 	"time"
 
+	_ "github.com/ivloli/strapi-doc-center/search-service/docs"
 	"github.com/ivloli/strapi-doc-center/search-service/internal/document"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/meilisearch/meilisearch-go"
+	httpSwagger "github.com/swaggo/http-swagger"
 )
 
 type config struct {
@@ -61,6 +63,39 @@ type syncRequest struct {
 	DocID string `json:"docId"`
 }
 
+type healthResponse struct {
+	Status string `json:"status" example:"ok"`
+}
+
+type errorResponse struct {
+	Message string `json:"message" example:"search is temporarily unavailable"`
+}
+
+type syncResponse struct {
+	Status string `json:"status" example:"synced"`
+}
+
+type formattedSearchHit struct {
+	Title   string `json:"title" example:"<mark>快速</mark>开始"`
+	Content string `json:"content" example:"...使用 <mark>快速</mark>开始完成配置..."`
+}
+
+type searchHit struct {
+	ID        string              `json:"id" example:"quick-start"`
+	Title     string              `json:"title" example:"快速开始"`
+	Content   string              `json:"content" example:"完成产品配置的入门文档。"`
+	URL       string              `json:"url" example:"/quick-start"`
+	Formatted *formattedSearchHit `json:"_formatted,omitempty"`
+}
+
+type searchResponse struct {
+	Hits       []searchHit `json:"hits"`
+	Page       int         `json:"page" example:"1"`
+	PageSize   int         `json:"pageSize" example:"20"`
+	TotalHits  int         `json:"totalHits" example:"1"`
+	TotalPages int         `json:"totalPages" example:"1"`
+}
+
 type meiliClient struct {
 	client meilisearch.ServiceManager
 }
@@ -72,6 +107,15 @@ type service struct {
 	syncMu sync.Mutex
 }
 
+// @title 文档中心搜索服务 API
+// @version 1.0
+// @description 面向公开已发布文档的全文搜索与索引同步服务。
+// @BasePath /
+// @schemes http https
+// @securityDefinitions.apikey BearerAuth
+// @in header
+// @name Authorization
+// @description 内部同步接口使用 Bearer Token 鉴权。
 func main() {
 	cfg, err := loadConfig()
 	if err != nil {
@@ -120,6 +164,7 @@ func main() {
 	}
 }
 
+// loadConfig 从环境变量加载服务运行、Meilisearch 和同步配置。
 func loadConfig() (config, error) {
 	interval, err := time.ParseDuration(env("SYNC_INTERVAL", "1h"))
 	if err != nil || interval <= 0 {
@@ -147,6 +192,7 @@ func loadConfig() (config, error) {
 	return cfg, nil
 }
 
+// env 读取环境变量；未设置时使用给定默认值。
 func env(name, fallback string) string {
 	if value := os.Getenv(name); value != "" {
 		return value
@@ -154,26 +200,48 @@ func env(name, fallback string) string {
 	return fallback
 }
 
+// newMeiliClient 创建使用受限 API Key 的 Meilisearch 客户端。
 func newMeiliClient(baseURL, key string) *meiliClient {
 	return &meiliClient{client: meilisearch.New(baseURL, meilisearch.WithAPIKey(key))}
 }
 
+// routes 注册公开搜索、健康检查、内部同步和 Swagger UI 路由。
 func (s *service) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.health)
 	mux.HandleFunc("GET /search", s.search)
 	mux.HandleFunc("POST /internal/sync", s.internalSync)
+	mux.Handle("GET /swagger/", httpSwagger.WrapHandler)
 	return mux
 }
 
+// health 返回服务进程健康状态。
+// @Summary 健康检查
+// @Description 用于负载均衡与监控系统检测 Go 服务是否存活。
+// @Tags 系统
+// @Produce json
+// @Success 200 {object} healthResponse
+// @Router /healthz [get]
 func (s *service) health(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
+// search 查询 Meilisearch 并标准化分页响应。
+// @Summary 搜索公开文档
+// @Description 在标题和正文中搜索已发布且具有已发布菜单路径的文档。
+// @Tags 搜索
+// @Produce json
+// @Param q query string true "搜索关键词"
+// @Param page query int false "页码，默认 1" default(1)
+// @Param pageSize query int false "每页数量，默认 20，最大 100" default(20)
+// @Success 200 {object} searchResponse
+// @Failure 400 {object} errorResponse
+// @Failure 503 {object} errorResponse
+// @Router /search [get]
 func (s *service) search(w http.ResponseWriter, r *http.Request) {
 	query := strings.TrimSpace(r.URL.Query().Get("q"))
 	if query == "" {
-		http.Error(w, "q is required", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "q is required")
 		return
 	}
 	page := positiveInt(r.URL.Query().Get("page"), 1, 1, 100000)
@@ -182,7 +250,7 @@ func (s *service) search(w http.ResponseWriter, r *http.Request) {
 	result, err := s.meili.search(r.Context(), s.config.index, query, page, pageSize)
 	if err != nil {
 		log.Printf("search failed: %v", err)
-		http.Error(w, "search is temporarily unavailable", http.StatusServiceUnavailable)
+		writeError(w, http.StatusServiceUnavailable, "search is temporarily unavailable")
 		return
 	}
 	total := number(result["totalHits"])
@@ -198,6 +266,19 @@ func (s *service) search(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// internalSync 接收 Strapi 生命周期通知，并按 docId 执行幂等单篇同步。
+// @Summary 同步单篇文档索引
+// @Description 文档存在且公开时写入索引；不存在、下架或菜单不可见时删除索引。仅限 Strapi 内网调用。
+// @Tags 内部同步
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body syncRequest true "需要同步的文档标识"
+// @Success 200 {object} syncResponse
+// @Failure 400 {object} errorResponse
+// @Failure 401 {object} errorResponse
+// @Failure 503 {object} errorResponse
+// @Router /internal/sync [post]
 func (s *service) internalSync(w http.ResponseWriter, r *http.Request) {
 	if s.config.internalSyncToken == "" {
 		http.NotFound(w, r)
@@ -205,7 +286,7 @@ func (s *service) internalSync(w http.ResponseWriter, r *http.Request) {
 	}
 	providedToken := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 	if subtle.ConstantTimeCompare([]byte(providedToken), []byte(s.config.internalSyncToken)) != 1 {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 
@@ -213,17 +294,18 @@ func (s *service) internalSync(w http.ResponseWriter, r *http.Request) {
 	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&request); err != nil || strings.TrimSpace(request.DocID) == "" {
-		http.Error(w, "docId is required", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "docId is required")
 		return
 	}
 	if err := s.syncDocument(r.Context(), strings.TrimSpace(request.DocID)); err != nil {
 		log.Printf("incremental sync for %q failed: %v", request.DocID, err)
-		http.Error(w, "sync failed", http.StatusServiceUnavailable)
+		writeError(w, http.StatusServiceUnavailable, "sync failed")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"status": "synced"})
+	writeJSON(w, http.StatusOK, syncResponse{Status: "synced"})
 }
 
+// syncLoop 定期执行元数据对账，补偿 Hook 丢失、重启和硬删除场景。
 func (s *service) syncLoop(ctx context.Context) {
 	ticker := time.NewTicker(s.config.syncInterval)
 	defer ticker.Stop()
@@ -239,13 +321,14 @@ func (s *service) syncLoop(ctx context.Context) {
 	}
 }
 
-// sync compares lightweight source metadata first; unchanged documents never have their body read.
+// sync 串行执行一次两阶段对账，避免定时任务与 Hook 增量同步并发写入同一索引。
 func (s *service) sync(ctx context.Context) error {
 	s.syncMu.Lock()
 	defer s.syncMu.Unlock()
 	return s.syncLocked(ctx)
 }
 
+// syncLocked 先比较 PG 与 Meilisearch 元数据，仅加载并写入发生变化的全文。
 func (s *service) syncLocked(ctx context.Context) error {
 	source, err := s.readMetadata(ctx, nil)
 	if err != nil {
@@ -285,7 +368,7 @@ func (s *service) syncLocked(ctx context.Context) error {
 	return nil
 }
 
-// syncDocument is idempotent: an absent or non-public source document becomes a delete operation.
+// syncDocument 同步单篇文档；源数据不存在或不公开时将其从索引删除，因此可安全重复调用。
 func (s *service) syncDocument(ctx context.Context, docID string) error {
 	s.syncMu.Lock()
 	defer s.syncMu.Unlock()
@@ -304,6 +387,7 @@ func (s *service) syncDocument(ctx context.Context, docID string) error {
 	return s.upsertBatches(ctx, documents)
 }
 
+// upsertBatches 按配置批次提交变更文档，并等待每个 Meilisearch 异步任务完成。
 func (s *service) upsertBatches(ctx context.Context, documents []indexedDocument) error {
 	for start := 0; start < len(documents); start += s.config.syncBatchSize {
 		end := start + s.config.syncBatchSize
@@ -317,6 +401,7 @@ func (s *service) upsertBatches(ctx context.Context, documents []indexedDocument
 	return nil
 }
 
+// readMetadata 只读取公开文档的标识、更新时间和菜单 URL，用于轻量级差异判断。
 func (s *service) readMetadata(ctx context.Context, docIDs []string) (map[string]sourceMetadata, error) {
 	query := `
 SELECT d.doc_id, d.updated_at, m.value, m.updated_at
@@ -363,6 +448,7 @@ WHERE d.published_at IS NOT NULL
 	return metadata, nil
 }
 
+// readDocuments 仅为变化的 docId 读取标题和正文，并生成最终索引文档。
 func (s *service) readDocuments(ctx context.Context, docIDs []string) ([]indexedDocument, error) {
 	if len(docIDs) == 0 {
 		return nil, nil
@@ -406,8 +492,8 @@ ORDER BY d.doc_id`
 	return documents, nil
 }
 
+// sourceVersion 以稳定 JSON 计算 SHA-256，安全区分空字符串与 null 元数据。
 func sourceVersion(docID string, docUpdatedAt *string, url string, menuUpdatedAt *string) string {
-	// JSON keeps null distinct from an empty string and gives every version a stable field order.
 	payload, _ := json.Marshal(struct {
 		DocID         string  `json:"docId"`
 		DocUpdatedAt  *string `json:"docUpdatedAt"`
@@ -418,6 +504,7 @@ func sourceVersion(docID string, docUpdatedAt *string, url string, menuUpdatedAt
 	return hex.EncodeToString(sum[:])
 }
 
+// timestampValue 规范化可空时间戳，避免时区格式差异造成无效索引更新。
 func timestampValue(value pgtype.Timestamptz) *string {
 	if !value.Valid {
 		return nil
@@ -426,6 +513,7 @@ func timestampValue(value pgtype.Timestamptz) *string {
 	return &formatted
 }
 
+// textValue 将 PG 可空文本转换为可安全索引的字符串。
 func textValue(value pgtype.Text) string {
 	if !value.Valid {
 		return ""
@@ -433,6 +521,7 @@ func textValue(value pgtype.Text) string {
 	return value.String
 }
 
+// ensureIndex 创建搜索索引并配置标题优先于正文的可搜索字段顺序。
 func (s *service) ensureIndex(ctx context.Context) error {
 	if err := s.meili.createIndex(ctx, s.config.index); err != nil {
 		return err
@@ -440,6 +529,7 @@ func (s *service) ensureIndex(ctx context.Context) error {
 	return s.meili.configureIndex(ctx, s.config.index)
 }
 
+// createIndex 在索引不存在时创建以 id 为主键的 Meilisearch 索引。
 func (m *meiliClient) createIndex(ctx context.Context, index string) error {
 	if _, err := m.client.GetIndexWithContext(ctx, index); err == nil {
 		return nil
@@ -451,6 +541,7 @@ func (m *meiliClient) createIndex(ctx context.Context, index string) error {
 	return m.waitTask(ctx, task)
 }
 
+// configureIndex 写入搜索字段和返回字段配置。
 func (m *meiliClient) configureIndex(ctx context.Context, index string) error {
 	task, err := m.client.Index(index).UpdateSettingsWithContext(ctx, &meilisearch.Settings{
 		SearchableAttributes: []string{"title", "content"},
@@ -462,6 +553,7 @@ func (m *meiliClient) configureIndex(ctx context.Context, index string) error {
 	return m.waitTask(ctx, task)
 }
 
+// upsertDocuments 将文档新增或覆盖到指定索引。
 func (m *meiliClient) upsertDocuments(ctx context.Context, index string, documents []indexedDocument) error {
 	if len(documents) == 0 {
 		return nil
@@ -473,6 +565,7 @@ func (m *meiliClient) upsertDocuments(ctx context.Context, index string, documen
 	return m.waitTask(ctx, task)
 }
 
+// documentMetadata 分页读取索引中的 id 和 sourceVersion，避免拉取正文参与对账。
 func (m *meiliClient) documentMetadata(ctx context.Context, index string) (map[string]indexedMetadata, error) {
 	metadata := make(map[string]indexedMetadata)
 	for offset := 0; ; offset += 1000 {
@@ -504,6 +597,7 @@ func (m *meiliClient) documentMetadata(ctx context.Context, index string) (map[s
 	return metadata, nil
 }
 
+// deleteDocuments 批量删除下架、删除或菜单不可见的索引文档。
 func (m *meiliClient) deleteDocuments(ctx context.Context, index string, ids []string) error {
 	if len(ids) == 0 {
 		return nil
@@ -515,6 +609,7 @@ func (m *meiliClient) deleteDocuments(ctx context.Context, index string, ids []s
 	return m.waitTask(ctx, task)
 }
 
+// search 调用 Meilisearch 并请求标题高亮和正文裁剪摘要。
 func (m *meiliClient) search(ctx context.Context, index, query string, page, pageSize int) (map[string]any, error) {
 	raw, err := m.client.Index(index).SearchRawWithContext(ctx, query, &meilisearch.SearchRequest{
 		Offset:                int64((page - 1) * pageSize),
@@ -535,6 +630,7 @@ func (m *meiliClient) search(ctx context.Context, index, query string, page, pag
 	return result, nil
 }
 
+// waitTask 等待 Meilisearch 异步写操作结束，并将失败任务转换为错误。
 func (m *meiliClient) waitTask(ctx context.Context, task *meilisearch.TaskInfo) error {
 	if task == nil || task.TaskUID == 0 {
 		return fmt.Errorf("Meilisearch did not return taskUid")
@@ -549,6 +645,7 @@ func (m *meiliClient) waitTask(ctx context.Context, task *meilisearch.TaskInfo) 
 	return nil
 }
 
+// positiveInt 解析受范围约束的正整数查询参数，非法值回退为默认值。
 func positiveInt(value string, fallback, min, max int) int {
 	if value == "" {
 		return fallback
@@ -560,6 +657,7 @@ func positiveInt(value string, fallback, min, max int) int {
 	return parsed
 }
 
+// number 将 JSON 数值转换为分页计算所需的 int。
 func number(value any) int {
 	switch number := value.(type) {
 	case float64:
@@ -574,8 +672,14 @@ func number(value any) int {
 	}
 }
 
+// writeJSON 统一写入 JSON 响应及 HTTP 状态码。
 func writeJSON(w http.ResponseWriter, status int, body any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(body)
+}
+
+// writeError 以统一 JSON 结构返回客户端可读的错误消息。
+func writeError(w http.ResponseWriter, status int, message string) {
+	writeJSON(w, status, errorResponse{Message: message})
 }

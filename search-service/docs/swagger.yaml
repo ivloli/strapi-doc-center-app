@@ -1,0 +1,172 @@
+basePath: /
+definitions:
+  main.errorResponse:
+    properties:
+      message:
+        example: search is temporarily unavailable
+        type: string
+    type: object
+  main.formattedSearchHit:
+    properties:
+      content:
+        example: '...使用 <mark>快速</mark>开始完成配置...'
+        type: string
+      title:
+        example: <mark>快速</mark>开始
+        type: string
+    type: object
+  main.healthResponse:
+    properties:
+      status:
+        example: ok
+        type: string
+    type: object
+  main.searchHit:
+    properties:
+      _formatted:
+        $ref: '#/definitions/main.formattedSearchHit'
+      content:
+        example: 完成产品配置的入门文档。
+        type: string
+      id:
+        example: quick-start
+        type: string
+      title:
+        example: 快速开始
+        type: string
+      url:
+        example: /quick-start
+        type: string
+    type: object
+  main.searchResponse:
+    properties:
+      hits:
+        items:
+          $ref: '#/definitions/main.searchHit'
+        type: array
+      page:
+        example: 1
+        type: integer
+      pageSize:
+        example: 20
+        type: integer
+      totalHits:
+        example: 1
+        type: integer
+      totalPages:
+        example: 1
+        type: integer
+    type: object
+  main.syncRequest:
+    properties:
+      docId:
+        type: string
+    type: object
+  main.syncResponse:
+    properties:
+      status:
+        example: synced
+        type: string
+    type: object
+info:
+  contact: {}
+  description: 面向公开已发布文档的全文搜索与索引同步服务。
+  title: 文档中心搜索服务 API
+  version: "1.0"
+paths:
+  /healthz:
+    get:
+      description: 用于负载均衡与监控系统检测 Go 服务是否存活。
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.healthResponse'
+      summary: 健康检查
+      tags:
+      - 系统
+  /internal/sync:
+    post:
+      consumes:
+      - application/json
+      description: 文档存在且公开时写入索引；不存在、下架或菜单不可见时删除索引。仅限 Strapi 内网调用。
+      parameters:
+      - description: 需要同步的文档标识
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/main.syncRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.syncResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/main.errorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/main.errorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/main.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: 同步单篇文档索引
+      tags:
+      - 内部同步
+  /search:
+    get:
+      description: 在标题和正文中搜索已发布且具有已发布菜单路径的文档。
+      parameters:
+      - description: 搜索关键词
+        in: query
+        name: q
+        required: true
+        type: string
+      - default: 1
+        description: 页码，默认 1
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: 每页数量，默认 20，最大 100
+        in: query
+        name: pageSize
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.searchResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/main.errorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/main.errorResponse'
+      summary: 搜索公开文档
+      tags:
+      - 搜索
+schemes:
+- http
+- https
+securityDefinitions:
+  BearerAuth:
+    description: 内部同步接口使用 Bearer Token 鉴权。
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"

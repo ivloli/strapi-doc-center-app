@@ -11,7 +11,7 @@ MEILI_HOST ?= 127.0.0.1
 MEILI_PORT ?= 7700
 MEILI_DB_PATH ?= /var/lib/doc-search-meilisearch
 
-.PHONY: build test run install-go install-meilisearch create-meili-key write-service write-meili-service deploy restart status logs meili-restart meili-status meili-logs
+.PHONY: build test run swagger install-go install-meilisearch create-meili-key write-service write-meili-service deploy restart status logs meili-restart meili-status meili-logs
 
 build:
 	@mkdir -p "$(BIN_DIR)"
@@ -22,6 +22,9 @@ test:
 
 run:
 	go run ./cmd/search
+
+swagger:
+	bash ./scripts/generate-swagger.sh
 
 install-go:
 	@set -eu; \
