@@ -5,7 +5,8 @@ This is a standalone Go service. It does not call or modify Strapi: PostgreSQL r
 ## Scope
 
 - Indexes only documents with a non-null `docs.published_at` and an associated published menu.
-- Uses `menus.value` as the document URL.
+- Matches a menu through `menus.doc_id = docs.doc_id`, or the legacy `menus.value = docs.title` convention.
+- Uses `/<docId>` as the document URL, matching the frontend route.
 - Strapi lifecycle notifications trigger an idempotent single-document sync.
 - Reconciles source and index metadata on startup and at `SYNC_INTERVAL`.
 - Provides public `GET /search`, `GET /healthz`, and a private `POST /internal/sync` endpoint.
@@ -13,14 +14,18 @@ This is a standalone Go service. It does not call or modify Strapi: PostgreSQL r
 The source query deliberately models the current Strapi schema:
 
 ```sql
-SELECT d.doc_id, d.updated_at, m.value, m.updated_at
+SELECT d.doc_id, d.updated_at
 FROM docs d
-JOIN menus m ON m.doc_id = d.doc_id
 WHERE d.published_at IS NOT NULL
-  AND m.published_at IS NOT NULL;
+  AND EXISTS (
+    SELECT 1
+    FROM menus m
+    WHERE m.published_at IS NOT NULL
+      AND (m.doc_id = d.doc_id OR m.value = d.title)
+  );
 ```
 
-The reconciliation first compares a SHA-256 `sourceVersion` calculated from `docId`, document and menu update times, and URL. Meilisearch receives a separate safe primary key derived from the SHA-256 of `docId`, so Chinese or special-character document IDs remain supported. Only new or changed IDs trigger a second query for title and content. Missing IDs are deleted from Meilisearch. Verify the physical table and column names against the production Strapi v5 database before deployment.
+The reconciliation first compares a SHA-256 `sourceVersion` calculated from `docId` and document update time. Meilisearch receives a separate safe primary key derived from the SHA-256 of `docId`, so Chinese or special-character document IDs remain supported. Only new or changed IDs trigger a second query for title and content. Missing or no-longer-visible IDs are deleted from Meilisearch. Verify the physical table and column names against the production Strapi v5 database before deployment.
 
 ## Local Run
 

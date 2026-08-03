@@ -42,7 +42,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "文档存在且公开时写入索引；不存在、下架或菜单不可见时删除索引。仅限 Strapi 内网调用。",
+                "description": "文档变更时按 docId 同步单篇；菜单变更时按 menuValue 触发全量对账，确保可见性变化立即生效。仅限 Strapi 内网调用。",
                 "consumes": [
                     "application/json"
                 ],
@@ -94,7 +94,7 @@ const docTemplate = `{
         },
         "/search/list": {
             "post": {
-                "description": "仅按标题搜索已发布且具有已发布菜单路径的文档，与关键词联想保持一致。",
+                "description": "仅按标题搜索已发布且具有已发布菜单入口的文档，与关键词联想保持一致。",
                 "consumes": [
                     "application/json"
                 ],
@@ -424,6 +424,9 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "docId": {
+                    "type": "string"
+                },
+                "menuValue": {
                     "type": "string"
                 }
             }

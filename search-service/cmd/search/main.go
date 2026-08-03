@@ -55,9 +55,18 @@ type indexedDocument struct {
 type sourceMetadata struct {
 	ID            string
 	DocID         string
-	URL           string
 	SourceVersion string
 }
+
+// visibleMenuCondition 兼容两种菜单关联方式：新数据使用 docId，既有数据使用 value 对应文章标题。
+// EXISTS 只判断是否有可访问入口，避免两种关联同时存在时重复读取或索引同一篇文章。
+const visibleMenuCondition = `
+  AND EXISTS (
+    SELECT 1
+    FROM menus m
+    WHERE m.published_at IS NOT NULL
+      AND (m.doc_id = d.doc_id OR m.value = d.title)
+  )`
 
 type indexedMetadata struct {
 	ID            string
@@ -65,7 +74,8 @@ type indexedMetadata struct {
 }
 
 type syncRequest struct {
-	DocID string `json:"docId"`
+	DocID     string `json:"docId"`
+	MenuValue string `json:"menuValue"`
 }
 
 type searchListRequest struct {
@@ -392,7 +402,7 @@ func (s *service) suggestions(w http.ResponseWriter, r *http.Request) {
 
 // search 查询 Meilisearch 并标准化分页响应。
 // @Summary 搜索公开文档
-// @Description 仅按标题搜索已发布且具有已发布菜单路径的文档，与关键词联想保持一致。
+// @Description 仅按标题搜索已发布且具有已发布菜单入口的文档，与关键词联想保持一致。
 // @Tags 搜索
 // @Accept json
 // @Produce json
@@ -447,9 +457,9 @@ func (s *service) search(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// internalSync 接收 Strapi 生命周期通知，并按 docId 执行幂等单篇同步。
+// internalSync 接收 Strapi 生命周期通知；文档变更同步单篇，菜单变更执行可见性对账。
 // @Summary 同步单篇文档索引
-// @Description 文档存在且公开时写入索引；不存在、下架或菜单不可见时删除索引。仅限 Strapi 内网调用。
+// @Description 文档变更时按 docId 同步单篇；菜单变更时按 menuValue 触发全量对账，确保可见性变化立即生效。仅限 Strapi 内网调用。
 // @Tags 内部同步
 // @Accept json
 // @Produce json
@@ -474,12 +484,25 @@ func (s *service) internalSync(w http.ResponseWriter, r *http.Request) {
 	var request syncRequest
 	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096))
 	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&request); err != nil || strings.TrimSpace(request.DocID) == "" {
-		writeError(w, http.StatusBadRequest, "docId is required")
+	if err := decoder.Decode(&request); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	if err := s.syncDocument(r.Context(), strings.TrimSpace(request.DocID)); err != nil {
-		log.Printf("incremental sync for %q failed: %v", request.DocID, err)
+	docID := strings.TrimSpace(request.DocID)
+	menuValue := strings.TrimSpace(request.MenuValue)
+	if docID == "" && menuValue == "" {
+		writeError(w, http.StatusBadRequest, "docId or menuValue is required")
+		return
+	}
+	var syncErr error
+	if docID != "" {
+		syncErr = s.syncDocument(r.Context(), docID)
+	} else {
+		// 既有菜单数据没有 docId，无法定位单篇文章时对账全部元数据以保证可见性同步。
+		syncErr = s.sync(r.Context())
+	}
+	if syncErr != nil {
+		log.Printf("incremental sync for docId=%q menuValue=%q failed: %v", docID, menuValue, syncErr)
 		writeError(w, http.StatusServiceUnavailable, "sync failed")
 		return
 	}
@@ -587,14 +610,12 @@ func (s *service) upsertBatches(ctx context.Context, documents []indexedDocument
 	return nil
 }
 
-// readMetadata 只读取公开文档的标识、更新时间和菜单 URL，用于轻量级差异判断。
+// readMetadata 只读取具有已发布菜单入口的文档标识和更新时间，用于轻量级差异判断。
 func (s *service) readMetadata(ctx context.Context, docIDs []string) (map[string]sourceMetadata, error) {
 	query := `
-SELECT d.doc_id, d.updated_at, m.value, m.updated_at
+SELECT d.doc_id, d.updated_at
 FROM docs d
-JOIN menus m ON m.doc_id = d.doc_id
-WHERE d.published_at IS NOT NULL
-  AND m.published_at IS NOT NULL`
+WHERE d.published_at IS NOT NULL` + visibleMenuCondition
 	args := []any{}
 	if docIDs != nil {
 		query += "\n  AND d.doc_id = ANY($1::text[])"
@@ -609,25 +630,20 @@ WHERE d.published_at IS NOT NULL
 
 	metadata := make(map[string]sourceMetadata)
 	for rows.Next() {
-		var id, url pgtype.Text
-		var docUpdatedAt, menuUpdatedAt pgtype.Timestamptz
-		if err := rows.Scan(&id, &docUpdatedAt, &url, &menuUpdatedAt); err != nil {
+		var id pgtype.Text
+		var docUpdatedAt pgtype.Timestamptz
+		if err := rows.Scan(&id, &docUpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan source metadata: %w", err)
 		}
 		if !id.Valid || strings.TrimSpace(id.String) == "" {
 			log.Printf("skip source document without docId")
 			continue
 		}
-		if !url.Valid || strings.TrimSpace(url.String) == "" {
-			log.Printf("skip source document %q without a menu URL", id.String)
-			continue
-		}
 		indexID := documentIndexID(id.String)
 		metadata[indexID] = sourceMetadata{
 			ID:            indexID,
 			DocID:         id.String,
-			URL:           url.String,
-			SourceVersion: sourceVersion(id.String, timestampValue(docUpdatedAt), url.String, timestampValue(menuUpdatedAt)),
+			SourceVersion: sourceVersion(id.String, timestampValue(docUpdatedAt)),
 		}
 	}
 	if err := rows.Err(); err != nil {
@@ -642,15 +658,14 @@ func (s *service) readDocuments(ctx context.Context, docIDs []string) ([]indexed
 		return nil, nil
 	}
 	sort.Strings(docIDs)
-	const query = `
-SELECT d.doc_id, d.title, d.content, d.updated_at, m.value, m.updated_at
+	const readDocumentsQuery = `
+SELECT d.doc_id, d.title, d.content, d.updated_at
 FROM docs d
-JOIN menus m ON m.doc_id = d.doc_id
 WHERE d.published_at IS NOT NULL
-  AND m.published_at IS NOT NULL
+` + visibleMenuCondition + `
   AND d.doc_id = ANY($1::text[])
 ORDER BY d.doc_id`
-	rows, err := s.pool.Query(ctx, query, docIDs)
+	rows, err := s.pool.Query(ctx, readDocumentsQuery, docIDs)
 	if err != nil {
 		return nil, fmt.Errorf("read changed documents: %w", err)
 	}
@@ -658,12 +673,12 @@ ORDER BY d.doc_id`
 
 	documents := make([]indexedDocument, 0, len(docIDs))
 	for rows.Next() {
-		var id, title, content, url pgtype.Text
-		var docUpdatedAt, menuUpdatedAt pgtype.Timestamptz
-		if err := rows.Scan(&id, &title, &content, &docUpdatedAt, &url, &menuUpdatedAt); err != nil {
+		var id, title, content pgtype.Text
+		var docUpdatedAt pgtype.Timestamptz
+		if err := rows.Scan(&id, &title, &content, &docUpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan changed document: %w", err)
 		}
-		if !id.Valid || strings.TrimSpace(id.String) == "" || !url.Valid || strings.TrimSpace(url.String) == "" {
+		if !id.Valid || strings.TrimSpace(id.String) == "" {
 			continue
 		}
 		documents = append(documents, indexedDocument{
@@ -671,8 +686,8 @@ ORDER BY d.doc_id`
 			DocID:         id.String,
 			Title:         textValue(title),
 			Content:       document.PlainText(textValue(content)),
-			URL:           url.String,
-			SourceVersion: sourceVersion(id.String, timestampValue(docUpdatedAt), url.String, timestampValue(menuUpdatedAt)),
+			URL:           documentPath(id.String),
+			SourceVersion: sourceVersion(id.String, timestampValue(docUpdatedAt)),
 		})
 	}
 	if err := rows.Err(); err != nil {
@@ -682,13 +697,11 @@ ORDER BY d.doc_id`
 }
 
 // sourceVersion 以稳定 JSON 计算 SHA-256，安全区分空字符串与 null 元数据。
-func sourceVersion(docID string, docUpdatedAt *string, url string, menuUpdatedAt *string) string {
+func sourceVersion(docID string, docUpdatedAt *string) string {
 	payload, _ := json.Marshal(struct {
-		DocID         string  `json:"docId"`
-		DocUpdatedAt  *string `json:"docUpdatedAt"`
-		URL           string  `json:"url"`
-		MenuUpdatedAt *string `json:"menuUpdatedAt"`
-	}{docID, docUpdatedAt, url, menuUpdatedAt})
+		DocID        string  `json:"docId"`
+		DocUpdatedAt *string `json:"docUpdatedAt"`
+	}{docID, docUpdatedAt})
 	sum := sha256.Sum256(payload)
 	return hex.EncodeToString(sum[:])
 }
