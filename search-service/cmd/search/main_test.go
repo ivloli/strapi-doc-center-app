@@ -37,16 +37,32 @@ func TestDocumentIndexIDSupportsChineseDocID(t *testing.T) {
 
 func TestSearchResultHits(t *testing.T) {
 	hits, err := searchResultHits([]any{map[string]any{
-		"id":      "quick-start",
+		"id":      "doc_hash",
+		"docId":   "test-kirito",
 		"title":   "快速开始",
-		"content": "入门文档",
-		"url":     "/quick-start",
-	}})
+		"content": "入门文档与管理说明",
+		"_formatted": map[string]any{
+			"title":   "快速开始",
+			"content": "入门文档与<mark>管理</mark>说明",
+		},
+	}}, "https://help.test.starviewcloud.com")
 	if err != nil {
 		t.Fatalf("searchResultHits() error = %v", err)
 	}
-	if len(hits) != 1 || hits[0].ID != "quick-start" || hits[0].URL != "/quick-start" {
+	if len(hits) != 1 || hits[0].ID != "doc_hash" || hits[0].URL != "https://help.test.starviewcloud.com/test-kirito" {
 		t.Fatalf("searchResultHits() = %#v", hits)
+	}
+	if hits[0].Summary != "入门文档与管理说明" || hits[0].Highlight.Summary != "入门文档与<mark>管理</mark>说明" {
+		t.Fatalf("unexpected summary fields: %#v", hits[0])
+	}
+}
+
+func TestRequestBaseURLUsesForwardedHeaders(t *testing.T) {
+	request := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:38987/search/list", nil)
+	request.Header.Set("X-Forwarded-Proto", "https")
+	request.Header.Set("X-Forwarded-Host", "help.test.starviewcloud.com")
+	if got := requestBaseURL(request); got != "https://help.test.starviewcloud.com" {
+		t.Fatalf("requestBaseURL() = %q", got)
 	}
 }
 

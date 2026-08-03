@@ -45,7 +45,7 @@ GET /healthz
 POST /internal/sync
 ```
 
-`/search/list` accepts a camelCase JSON request body and returns Meilisearch-formatted hits. Highlighted `title` and cropped `content` live in each hit's `_formatted` object. Treat the `<mark>` tags as the only allowed markup and escape all other content before rendering.
+`/search/list` returns frontend-ready hits. `path` is the relative frontend route derived from `docId`; `url` is the same route with the request's reverse-proxy domain and protocol. `summary` is a cropped plain-text excerpt, while `highlight.title` and `highlight.summary` contain the same fields with Meilisearch `<mark>` tags. Escape all non-highlight content and render only `<mark>` tags as markup.
 
 ```json
 {
@@ -64,7 +64,18 @@ All endpoints use the platform response envelope. The search result shape is:
   "code": 200,
   "message": "success",
   "data": {
-    "list": [],
+    "list": [
+      {
+        "docId": "test-kirito",
+        "path": "/test-kirito",
+        "url": "https://help.test.starviewcloud.com/test-kirito",
+        "summary": "域名防封主要用于...",
+        "highlight": {
+          "title": "test-kirito",
+          "summary": "域名防封主要用于统一<mark>管理</mark>..."
+        }
+      }
+    ],
     "pagination": {
       "page": 1,
       "pageSize": 20,

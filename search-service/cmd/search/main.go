@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"sort"
@@ -107,13 +108,27 @@ type formattedSearchHit struct {
 	Content string `json:"content" example:"...使用 <mark>快速</mark>开始完成配置..."`
 }
 
+type meiliSearchHit struct {
+	ID        string              `json:"id"`
+	DocID     string              `json:"docId"`
+	Title     string              `json:"title"`
+	Content   string              `json:"content"`
+	Formatted *formattedSearchHit `json:"_formatted"`
+}
+
+type searchHighlight struct {
+	Title   string `json:"title" example:"<mark>快速</mark>开始"`
+	Summary string `json:"summary" example:"...使用 <mark>快速</mark>开始完成配置..."`
+}
+
 type searchHit struct {
-	ID        string              `json:"id" example:"quick-start"`
-	DocID     string              `json:"docId" example:"API KEY使用指引"`
-	Title     string              `json:"title" example:"快速开始"`
-	Content   string              `json:"content" example:"完成产品配置的入门文档。"`
-	URL       string              `json:"url" example:"/quick-start"`
-	Formatted *formattedSearchHit `json:"_formatted,omitempty"`
+	ID        string          `json:"id" example:"doc_9fd2d776b6a4521d685e27ede29f052003c8353455ec5341b3831089f14e1220"`
+	DocID     string          `json:"docId" example:"test-kirito"`
+	Title     string          `json:"title" example:"快速开始"`
+	Path      string          `json:"path" example:"/test-kirito"`
+	URL       string          `json:"url" example:"https://help.test.starviewcloud.com/test-kirito"`
+	Summary   string          `json:"summary" example:"...使用快速开始完成配置..."`
+	Highlight searchHighlight `json:"highlight"`
 }
 
 type pagination struct {
@@ -304,7 +319,7 @@ func (s *service) search(w http.ResponseWriter, r *http.Request) {
 	if total == 0 {
 		total = number(result["estimatedTotalHits"])
 	}
-	hits, err := searchResultHits(result["hits"])
+	hits, err := searchResultHits(result["hits"], requestBaseURL(r))
 	if err != nil {
 		log.Printf("decode search hits: %v", err)
 		writeError(w, http.StatusServiceUnavailable, "search result is temporarily unavailable")
@@ -752,17 +767,94 @@ func number(value any) int {
 	}
 }
 
-// searchResultHits 将 Meilisearch 动态命中结果转换为对外稳定的搜索条目。
-func searchResultHits(value any) ([]searchHit, error) {
+// searchResultHits 将 Meilisearch 内部命中结果转换为前端可直接使用的文档链接与高亮摘要。
+func searchResultHits(value any, baseURL string) ([]searchHit, error) {
 	encoded, err := json.Marshal(value)
 	if err != nil {
 		return nil, err
 	}
-	var hits []searchHit
-	if err := json.Unmarshal(encoded, &hits); err != nil {
+	var sourceHits []meiliSearchHit
+	if err := json.Unmarshal(encoded, &sourceHits); err != nil {
 		return nil, err
 	}
+	hits := make([]searchHit, 0, len(sourceHits))
+	for _, source := range sourceHits {
+		path := documentPath(source.DocID)
+		titleHighlight := source.Title
+		summaryHighlight := truncateSummary(source.Content, 180)
+		if source.Formatted != nil {
+			if source.Formatted.Title != "" {
+				titleHighlight = source.Formatted.Title
+			}
+			if source.Formatted.Content != "" {
+				summaryHighlight = source.Formatted.Content
+			}
+		}
+		url := path
+		if baseURL != "" {
+			url = baseURL + path
+		}
+		hits = append(hits, searchHit{
+			ID:      source.ID,
+			DocID:   source.DocID,
+			Title:   source.Title,
+			Path:    path,
+			URL:     url,
+			Summary: stripHighlightTags(summaryHighlight),
+			Highlight: searchHighlight{
+				Title:   titleHighlight,
+				Summary: summaryHighlight,
+			},
+		})
+	}
 	return hits, nil
+}
+
+// requestBaseURL derives the public document host from trusted reverse-proxy headers.
+func requestBaseURL(r *http.Request) string {
+	host := firstForwardedValue(r.Header.Get("X-Forwarded-Host"))
+	if host == "" {
+		host = r.Host
+	}
+	if host == "" {
+		return ""
+	}
+	protocol := firstForwardedValue(r.Header.Get("X-Forwarded-Proto"))
+	if protocol == "" {
+		protocol = "http"
+		if r.TLS != nil {
+			protocol = "https"
+		}
+	}
+	return protocol + "://" + host
+}
+
+// firstForwardedValue extracts the first proxy value when multiple proxies append headers.
+func firstForwardedValue(value string) string {
+	if index := strings.IndexByte(value, ','); index >= 0 {
+		value = value[:index]
+	}
+	return strings.TrimSpace(value)
+}
+
+// documentPath encodes the Strapi business identifier as the frontend document route.
+func documentPath(docID string) string {
+	return "/" + url.PathEscape(docID)
+}
+
+// stripHighlightTags keeps the cropped text while removing the only markup emitted by Meilisearch.
+func stripHighlightTags(value string) string {
+	value = strings.ReplaceAll(value, "<mark>", "")
+	return strings.ReplaceAll(value, "</mark>", "")
+}
+
+// truncateSummary limits a fallback summary by Unicode code points instead of bytes.
+func truncateSummary(value string, limit int) string {
+	characters := []rune(value)
+	if len(characters) <= limit {
+		return value
+	}
+	return string(characters[:limit]) + "..."
 }
 
 // writeJSON 统一写入 JSON 响应及 HTTP 状态码。

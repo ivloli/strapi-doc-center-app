@@ -10,15 +10,6 @@ definitions:
         example: keyword is required
         type: string
     type: object
-  main.formattedSearchHit:
-    properties:
-      content:
-        example: '...使用 <mark>快速</mark>开始完成配置...'
-        type: string
-      title:
-        example: <mark>快速</mark>开始
-        type: string
-    type: object
   main.healthData:
     properties:
       status:
@@ -69,24 +60,36 @@ definitions:
       pagination:
         $ref: '#/definitions/main.pagination'
     type: object
+  main.searchHighlight:
+    properties:
+      summary:
+        example: '...使用 <mark>快速</mark>开始完成配置...'
+        type: string
+      title:
+        example: <mark>快速</mark>开始
+        type: string
+    type: object
   main.searchHit:
     properties:
-      _formatted:
-        $ref: '#/definitions/main.formattedSearchHit'
-      content:
-        example: 完成产品配置的入门文档。
-        type: string
       docId:
-        example: API KEY使用指引
+        example: test-kirito
         type: string
+      highlight:
+        $ref: '#/definitions/main.searchHighlight'
       id:
-        example: quick-start
+        example: doc_9fd2d776b6a4521d685e27ede29f052003c8353455ec5341b3831089f14e1220
+        type: string
+      path:
+        example: /test-kirito
+        type: string
+      summary:
+        example: '...使用快速开始完成配置...'
         type: string
       title:
         example: 快速开始
         type: string
       url:
-        example: /quick-start
+        example: https://help.test.starviewcloud.com/test-kirito
         type: string
     type: object
   main.searchListRequest:

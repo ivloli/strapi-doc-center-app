@@ -154,19 +154,6 @@ const docTemplate = `{
                 }
             }
         },
-        "main.formattedSearchHit": {
-            "type": "object",
-            "properties": {
-                "content": {
-                    "type": "string",
-                    "example": "...使用 \u003cmark\u003e快速\u003c/mark\u003e开始完成配置..."
-                },
-                "title": {
-                    "type": "string",
-                    "example": "\u003cmark\u003e快速\u003c/mark\u003e开始"
-                }
-            }
-        },
         "main.healthData": {
             "type": "object",
             "properties": {
@@ -240,23 +227,40 @@ const docTemplate = `{
                 }
             }
         },
+        "main.searchHighlight": {
+            "type": "object",
+            "properties": {
+                "summary": {
+                    "type": "string",
+                    "example": "...使用 \u003cmark\u003e快速\u003c/mark\u003e开始完成配置..."
+                },
+                "title": {
+                    "type": "string",
+                    "example": "\u003cmark\u003e快速\u003c/mark\u003e开始"
+                }
+            }
+        },
         "main.searchHit": {
             "type": "object",
             "properties": {
-                "_formatted": {
-                    "$ref": "#/definitions/main.formattedSearchHit"
-                },
-                "content": {
-                    "type": "string",
-                    "example": "完成产品配置的入门文档。"
-                },
                 "docId": {
                     "type": "string",
-                    "example": "API KEY使用指引"
+                    "example": "test-kirito"
+                },
+                "highlight": {
+                    "$ref": "#/definitions/main.searchHighlight"
                 },
                 "id": {
                     "type": "string",
-                    "example": "quick-start"
+                    "example": "doc_9fd2d776b6a4521d685e27ede29f052003c8353455ec5341b3831089f14e1220"
+                },
+                "path": {
+                    "type": "string",
+                    "example": "/test-kirito"
+                },
+                "summary": {
+                    "type": "string",
+                    "example": "...使用快速开始完成配置..."
                 },
                 "title": {
                     "type": "string",
@@ -264,7 +268,7 @@ const docTemplate = `{
                 },
                 "url": {
                     "type": "string",
-                    "example": "/quick-start"
+                    "example": "https://help.test.starviewcloud.com/test-kirito"
                 }
             }
         },
