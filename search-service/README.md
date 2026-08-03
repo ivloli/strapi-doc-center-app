@@ -115,13 +115,13 @@ Apifox should import the OpenAPI 3.0.3 document exposed by this service. The ser
 https://help.test.starviewcloud.com/help-apis/v1/doc-center/search-apifox/openapi.json
 ```
 
-The Go service also exposes the same OpenAPI 3.0.3 document locally at `http://127.0.0.1:<SEARCH_PORT>/apifox/openapi.json`. The test certificate currently needs correction before Apifox can verify it. Until then, import from the local service URL, or import `docs/swagger.json` as a Swagger 2.0 fallback. Regenerate the Swagger source with `make swagger` whenever an API annotation changes.
+The Go service also exposes the same OpenAPI 3.0.3 document locally at `http://127.0.0.1:<SEARCH_PORT>/apifox/openapi.json`. Browse the same document through a Swagger UI page at `http://127.0.0.1:<SEARCH_PORT>/apifox/index.html`. The test certificate currently needs correction before Apifox can verify it. Until then, import from the local service URL, or import `docs/swagger.json` as a Swagger 2.0 fallback. Regenerate the Swagger source with `make swagger` whenever an API annotation changes.
 
-Expose the public Apifox URL with this Nginx location, without including `/etc/nginx/proxy_params` because the location already sets `Host` explicitly:
+Expose both the public Apifox import URL and the browser documentation page with this Nginx location, without including `/etc/nginx/proxy_params` because the location already sets `Host` explicitly:
 
 ```nginx
-location = /help-apis/v1/doc-center/search-apifox/openapi.json {
-    proxy_pass http://127.0.0.1:38987/apifox/openapi.json;
+location ^~ /help-apis/v1/doc-center/search-apifox/ {
+    proxy_pass http://127.0.0.1:38987/apifox/;
     proxy_http_version 1.1;
 
     proxy_set_header Host              $host;

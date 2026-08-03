@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"regexp"
+	"strings"
 	"testing"
 )
 
@@ -95,6 +96,18 @@ func TestApifoxDocumentReturnsOpenAPIV3JSON(t *testing.T) {
 	}
 	if _, found := document["paths"].(map[string]any)["/search/suggestions/list"]; !found {
 		t.Fatalf("OpenAPI document does not contain the suggestions endpoint")
+	}
+}
+
+func TestApifoxUIUsesOpenAPIV3Document(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/apifox/index.html", nil)
+	(&service{}).routes().ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d", recorder.Code)
+	}
+	if !strings.Contains(recorder.Body.String(), "openapi.json") {
+		t.Fatal("Apifox UI does not load the OpenAPI 3.0 document")
 	}
 }
 

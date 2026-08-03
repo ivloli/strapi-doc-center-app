@@ -282,7 +282,7 @@ func newMeiliClient(baseURL, key string) *meiliClient {
 	return &meiliClient{client: meilisearch.New(baseURL, meilisearch.WithAPIKey(key))}
 }
 
-// routes 注册公开搜索、健康检查、内部同步和 Swagger UI 路由。
+// routes 注册公开搜索、健康检查、内部同步及 API 文档路由。
 func (s *service) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.health)
@@ -290,6 +290,8 @@ func (s *service) routes() http.Handler {
 	mux.HandleFunc("POST /search/list", s.search)
 	mux.HandleFunc("POST /internal/sync", s.internalSync)
 	mux.HandleFunc("GET /apifox/openapi.json", s.apifoxDocument)
+	// 复用 Swagger UI 展示 OpenAPI 3.0 文档；Apifox 仍可使用同一 JSON 地址导入。
+	mux.Handle("GET /apifox/", httpSwagger.Handler(httpSwagger.URL("/apifox/openapi.json")))
 	mux.Handle("GET /swagger/", httpSwagger.WrapHandler)
 	return mux
 }
