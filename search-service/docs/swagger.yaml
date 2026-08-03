@@ -237,7 +237,7 @@ paths:
     post:
       consumes:
       - application/json
-      description: 在标题和正文中搜索已发布且具有已发布菜单路径的文档。
+      description: 仅按标题搜索已发布且具有已发布菜单路径的文档，与关键词联想保持一致。
       parameters:
       - description: 搜索条件与分页参数
         in: body

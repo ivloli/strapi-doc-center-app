@@ -46,7 +46,7 @@ GET /healthz
 POST /internal/sync
 ```
 
-`/search/list` returns frontend-ready hits. `path` is the relative frontend route derived from `docId`; `url` is the same route with the request's reverse-proxy domain and protocol. `summary` is a cropped plain-text excerpt, while `highlight.title` and `highlight.summary` contain the same fields with Meilisearch `<mark>` tags. Escape all non-highlight content and render only `<mark>` tags as markup.
+`/search/list` and `/search/suggestions/list` both match document titles only, so the result list is consistent with the keyword recommendations shown while typing. `path` is the relative frontend route derived from `docId`; `url` is the same route with the request's reverse-proxy domain and protocol. `summary` is a cropped plain-text excerpt, while `highlight.title` and `highlight.summary` contain the same fields with Meilisearch `<mark>` tags. Escape all non-highlight content and render only `<mark>` tags as markup.
 
 ```json
 {
