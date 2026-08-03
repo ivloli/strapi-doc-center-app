@@ -41,6 +41,7 @@ make build
 
 ```text
 POST /search/list
+POST /search/suggestions/list
 GET /healthz
 POST /internal/sync
 ```
@@ -56,6 +57,17 @@ POST /internal/sync
   }
 }
 ```
+
+Use `POST /search/suggestions/list` while the user is typing. It performs title-only autocomplete and has no hot-keyword or analytics dependency:
+
+```json
+{
+  "keyword": "管理",
+  "limit": 8
+}
+```
+
+The returned `data.list` contains the suggestion keyword, `docId`, `path`, and complete `url`. After a user selects a suggestion or confirms input, call `POST /search/list` for the content result list.
 
 All endpoints use the platform response envelope. The search result shape is:
 
@@ -94,6 +106,32 @@ make swagger
 ```
 
 The script runs the pinned `swaggo/swag` generator without requiring a globally installed binary. Generated files are written to `docs/swagger.json`, `docs/swagger.yaml`, and `docs/docs.go`. When the service is running, browse the interactive API documentation at `/swagger/index.html`.
+
+## Apifox
+
+Apifox should import the OpenAPI 3.0.3 document exposed by this service. The service converts the Swagger 2.0 source generated from Go annotations at request time, so endpoint definitions remain maintained in one place. In the test gateway, use:
+
+```text
+https://help.test.starviewcloud.com/help-apis/v1/doc-center/search-apifox/openapi.json
+```
+
+The Go service also exposes the same OpenAPI 3.0.3 document locally at `http://127.0.0.1:<SEARCH_PORT>/apifox/openapi.json`. The test certificate currently needs correction before Apifox can verify it. Until then, import from the local service URL, or import `docs/swagger.json` as a Swagger 2.0 fallback. Regenerate the Swagger source with `make swagger` whenever an API annotation changes.
+
+Expose the public Apifox URL with this Nginx location, without including `/etc/nginx/proxy_params` because the location already sets `Host` explicitly:
+
+```nginx
+location = /help-apis/v1/doc-center/search-apifox/openapi.json {
+    proxy_pass http://127.0.0.1:38987/apifox/openapi.json;
+    proxy_http_version 1.1;
+
+    proxy_set_header Host              $host;
+    proxy_set_header X-Real-IP         $remote_addr;
+    proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Host  $host;
+    proxy_set_header X-Forwarded-Port  $server_port;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+```
 
 ## Deployment
 

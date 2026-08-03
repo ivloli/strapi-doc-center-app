@@ -134,6 +134,52 @@
                     }
                 }
             }
+        },
+        "/search/suggestions/list": {
+            "post": {
+                "description": "仅按文档标题匹配，不记录热门词或用户搜索行为。空关键词返回空列表。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "搜索"
+                ],
+                "summary": "获取搜索关键词建议",
+                "parameters": [
+                    {
+                        "description": "输入关键词与返回数量",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/main.suggestionListRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/main.suggestionResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/main.errorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/main.errorResponse"
+                        }
+                    }
+                }
+            }
         }
     },
     "definitions": {
@@ -290,6 +336,71 @@
                 },
                 "data": {
                     "$ref": "#/definitions/main.searchData"
+                },
+                "message": {
+                    "type": "string",
+                    "example": "success"
+                }
+            }
+        },
+        "main.searchSuggestion": {
+            "type": "object",
+            "properties": {
+                "docId": {
+                    "type": "string",
+                    "example": "test-kirito"
+                },
+                "keyword": {
+                    "type": "string",
+                    "example": "域名管理"
+                },
+                "path": {
+                    "type": "string",
+                    "example": "/test-kirito"
+                },
+                "title": {
+                    "type": "string",
+                    "example": "域名防封使用说明"
+                },
+                "url": {
+                    "type": "string",
+                    "example": "https://help.test.starviewcloud.com/test-kirito"
+                }
+            }
+        },
+        "main.suggestionData": {
+            "type": "object",
+            "properties": {
+                "list": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/main.searchSuggestion"
+                    }
+                }
+            }
+        },
+        "main.suggestionListRequest": {
+            "type": "object",
+            "properties": {
+                "keyword": {
+                    "type": "string",
+                    "example": "管理"
+                },
+                "limit": {
+                    "type": "integer",
+                    "example": 8
+                }
+            }
+        },
+        "main.suggestionResponse": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "integer",
+                    "example": 200
+                },
+                "data": {
+                    "$ref": "#/definitions/main.suggestionData"
                 },
                 "message": {
                     "type": "string",

@@ -20,7 +20,9 @@ import (
 	"syscall"
 	"time"
 
-	_ "github.com/ivloli/strapi-doc-center/search-service/docs"
+	"github.com/getkin/kin-openapi/openapi2"
+	"github.com/getkin/kin-openapi/openapi2conv"
+	generatedDocs "github.com/ivloli/strapi-doc-center/search-service/docs"
 	"github.com/ivloli/strapi-doc-center/search-service/internal/document"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -69,6 +71,11 @@ type syncRequest struct {
 type searchListRequest struct {
 	Keyword    string            `json:"keyword" example:"快速开始"`
 	Pagination paginationRequest `json:"pagination"`
+}
+
+type suggestionListRequest struct {
+	Keyword string `json:"keyword" example:"管理"`
+	Limit   int    `json:"limit" example:"8"`
 }
 
 type paginationRequest struct {
@@ -146,6 +153,24 @@ type searchResponse struct {
 	Code    int        `json:"code" example:"200"`
 	Message string     `json:"message" example:"success"`
 	Data    searchData `json:"data"`
+}
+
+type searchSuggestion struct {
+	Keyword string `json:"keyword" example:"域名管理"`
+	DocID   string `json:"docId" example:"test-kirito"`
+	Title   string `json:"title" example:"域名防封使用说明"`
+	Path    string `json:"path" example:"/test-kirito"`
+	URL     string `json:"url" example:"https://help.test.starviewcloud.com/test-kirito"`
+}
+
+type suggestionData struct {
+	List []searchSuggestion `json:"list"`
+}
+
+type suggestionResponse struct {
+	Code    int            `json:"code" example:"200"`
+	Message string         `json:"message" example:"success"`
+	Data    suggestionData `json:"data"`
 }
 
 type meiliClient struct {
@@ -261,8 +286,10 @@ func newMeiliClient(baseURL, key string) *meiliClient {
 func (s *service) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.health)
+	mux.HandleFunc("POST /search/suggestions/list", s.suggestions)
 	mux.HandleFunc("POST /search/list", s.search)
 	mux.HandleFunc("POST /internal/sync", s.internalSync)
+	mux.HandleFunc("GET /apifox/openapi.json", s.apifoxDocument)
 	mux.Handle("GET /swagger/", httpSwagger.WrapHandler)
 	return mux
 }
@@ -279,6 +306,85 @@ func (s *service) health(w http.ResponseWriter, _ *http.Request) {
 		Code:    http.StatusOK,
 		Message: "success",
 		Data:    healthData{Status: "ok"},
+	})
+}
+
+// apifoxDocument 将 Swagger 2.0 生成源转换为 OpenAPI 3.0.3，供 Apifox 通过 URL 导入。
+// Swagger 2.0 仍由 swaggo 根据 Go 注解生成，避免维护两套接口定义。
+func (s *service) apifoxDocument(w http.ResponseWriter, _ *http.Request) {
+	document, err := openAPIV3Document()
+	if err != nil {
+		log.Printf("convert OpenAPI document: %v", err)
+		writeError(w, http.StatusInternalServerError, "OpenAPI document is temporarily unavailable")
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write(document)
+}
+
+// openAPIV3Document 复用 swaggo 生成的 Swagger 2.0 描述，转换为 Apifox 首选的 OpenAPI 3.0 格式。
+func openAPIV3Document() ([]byte, error) {
+	var source openapi2.T
+	if err := json.Unmarshal([]byte(generatedDocs.SwaggerInfo.ReadDoc()), &source); err != nil {
+		return nil, fmt.Errorf("decode Swagger 2.0 source: %w", err)
+	}
+	document, err := openapi2conv.ToV3(&source)
+	if err != nil {
+		return nil, fmt.Errorf("convert Swagger 2.0 to OpenAPI 3.0: %w", err)
+	}
+	document.OpenAPI = "3.0.3"
+	encoded, err := json.Marshal(document)
+	if err != nil {
+		return nil, fmt.Errorf("encode OpenAPI 3.0 document: %w", err)
+	}
+	return encoded, nil
+}
+
+// suggestions 在用户输入期间返回轻量标题联想，不读取或返回整篇文档正文。
+// @Summary 获取搜索关键词建议
+// @Description 仅按文档标题匹配，不记录热门词或用户搜索行为。空关键词返回空列表。
+// @Tags 搜索
+// @Accept json
+// @Produce json
+// @Param request body suggestionListRequest true "输入关键词与返回数量"
+// @Success 200 {object} suggestionResponse
+// @Failure 400 {object} errorResponse
+// @Failure 503 {object} errorResponse
+// @Router /search/suggestions/list [post]
+func (s *service) suggestions(w http.ResponseWriter, r *http.Request) {
+	var request suggestionListRequest
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&request); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	keyword := strings.TrimSpace(request.Keyword)
+	if keyword == "" {
+		writeJSON(w, http.StatusOK, suggestionResponse{
+			Code:    http.StatusOK,
+			Message: "success",
+			Data:    suggestionData{List: []searchSuggestion{}},
+		})
+		return
+	}
+	result, err := s.meili.suggestions(r.Context(), s.config.index, keyword, boundedInt(request.Limit, 8, 1, 20))
+	if err != nil {
+		log.Printf("suggestions failed: %v", err)
+		writeError(w, http.StatusServiceUnavailable, "suggestions are temporarily unavailable")
+		return
+	}
+	suggestions, err := searchSuggestions(result["hits"], requestBaseURL(r))
+	if err != nil {
+		log.Printf("decode suggestions: %v", err)
+		writeError(w, http.StatusServiceUnavailable, "suggestions are temporarily unavailable")
+		return
+	}
+	writeJSON(w, http.StatusOK, suggestionResponse{
+		Code:    http.StatusOK,
+		Message: "success",
+		Data:    suggestionData{List: suggestions},
 	})
 }
 
@@ -585,7 +691,8 @@ func sourceVersion(docID string, docUpdatedAt *string, url string, menuUpdatedAt
 	return hex.EncodeToString(sum[:])
 }
 
-// documentIndexID converts an arbitrary Strapi docId into a Meilisearch-safe primary key.
+// documentIndexID 将任意 Strapi docId 转为 Meilisearch 可用的稳定主键。
+// 不能直接使用 docId，因为中文或特殊字符不符合 Meilisearch 主键约束。
 func documentIndexID(docID string) string {
 	sum := sha256.Sum256([]byte(docID))
 	return "doc_" + hex.EncodeToString(sum[:])
@@ -717,6 +824,23 @@ func (m *meiliClient) search(ctx context.Context, index, query string, page, pag
 	return result, nil
 }
 
+// suggestions 仅搜索标题字段，保持自动补全请求快速且结果简洁。
+func (m *meiliClient) suggestions(ctx context.Context, index, query string, limit int) (map[string]any, error) {
+	raw, err := m.client.Index(index).SearchRawWithContext(ctx, query, &meilisearch.SearchRequest{
+		Limit:                int64(limit),
+		AttributesToRetrieve: []string{"docId", "title"},
+		AttributesToSearchOn: []string{"title"},
+	})
+	if err != nil {
+		return nil, err
+	}
+	var result map[string]any
+	if err := json.Unmarshal(*raw, &result); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
 // waitTask 等待 Meilisearch 异步写操作结束，并将失败任务转换为错误。
 func (m *meiliClient) waitTask(ctx context.Context, task *meilisearch.TaskInfo) error {
 	if task == nil || task.TaskUID == 0 {
@@ -808,6 +932,43 @@ func searchResultHits(value any, baseURL string) ([]searchHit, error) {
 		})
 	}
 	return hits, nil
+}
+
+// searchSuggestions 将 Meilisearch 标题命中转换为去重后的前端联想项。
+// 每条文档只保留一个建议，避免索引异常或后续多字段检索产生重复入口。
+func searchSuggestions(value any, baseURL string) ([]searchSuggestion, error) {
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	var sourceHits []meiliSearchHit
+	if err := json.Unmarshal(encoded, &sourceHits); err != nil {
+		return nil, err
+	}
+	seen := make(map[string]struct{}, len(sourceHits))
+	suggestions := make([]searchSuggestion, 0, len(sourceHits))
+	for _, source := range sourceHits {
+		if source.DocID == "" || source.Title == "" {
+			continue
+		}
+		if _, exists := seen[source.DocID]; exists {
+			continue
+		}
+		seen[source.DocID] = struct{}{}
+		path := documentPath(source.DocID)
+		url := path
+		if baseURL != "" {
+			url = baseURL + path
+		}
+		suggestions = append(suggestions, searchSuggestion{
+			Keyword: source.Title,
+			DocID:   source.DocID,
+			Title:   source.Title,
+			Path:    path,
+			URL:     url,
+		})
+	}
+	return suggestions, nil
 }
 
 // requestBaseURL derives the public document host from trusted reverse-proxy headers.

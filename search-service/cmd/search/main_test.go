@@ -66,6 +66,38 @@ func TestRequestBaseURLUsesForwardedHeaders(t *testing.T) {
 	}
 }
 
+func TestSearchSuggestionsDeduplicatesDocumentIDs(t *testing.T) {
+	suggestions, err := searchSuggestions([]any{
+		map[string]any{"docId": "test-kirito", "title": "域名管理"},
+		map[string]any{"docId": "test-kirito", "title": "域名管理"},
+	}, "https://help.test.starviewcloud.com")
+	if err != nil {
+		t.Fatalf("searchSuggestions() error = %v", err)
+	}
+	if len(suggestions) != 1 || suggestions[0].URL != "https://help.test.starviewcloud.com/test-kirito" {
+		t.Fatalf("searchSuggestions() = %#v", suggestions)
+	}
+}
+
+func TestApifoxDocumentReturnsOpenAPIV3JSON(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/apifox/openapi.json", nil)
+	(&service{}).apifoxDocument(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d", recorder.Code)
+	}
+	var document map[string]any
+	if err := json.NewDecoder(recorder.Body).Decode(&document); err != nil {
+		t.Fatalf("decode OpenAPI document: %v", err)
+	}
+	if document["openapi"] != "3.0.3" {
+		t.Fatalf("openapi = %#v, want 3.0.3", document["openapi"])
+	}
+	if _, found := document["paths"].(map[string]any)["/search/suggestions/list"]; !found {
+		t.Fatalf("OpenAPI document does not contain the suggestions endpoint")
+	}
+}
+
 func TestWriteErrorUsesPlatformEnvelope(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	writeError(recorder, http.StatusBadRequest, "keyword is required")

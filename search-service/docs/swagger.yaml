@@ -111,6 +111,51 @@ definitions:
         example: success
         type: string
     type: object
+  main.searchSuggestion:
+    properties:
+      docId:
+        example: test-kirito
+        type: string
+      keyword:
+        example: 域名管理
+        type: string
+      path:
+        example: /test-kirito
+        type: string
+      title:
+        example: 域名防封使用说明
+        type: string
+      url:
+        example: https://help.test.starviewcloud.com/test-kirito
+        type: string
+    type: object
+  main.suggestionData:
+    properties:
+      list:
+        items:
+          $ref: '#/definitions/main.searchSuggestion'
+        type: array
+    type: object
+  main.suggestionListRequest:
+    properties:
+      keyword:
+        example: 管理
+        type: string
+      limit:
+        example: 8
+        type: integer
+    type: object
+  main.suggestionResponse:
+    properties:
+      code:
+        example: 200
+        type: integer
+      data:
+        $ref: '#/definitions/main.suggestionData'
+      message:
+        example: success
+        type: string
+    type: object
   main.syncData:
     properties:
       status:
@@ -216,6 +261,36 @@ paths:
           schema:
             $ref: '#/definitions/main.errorResponse'
       summary: 搜索公开文档
+      tags:
+      - 搜索
+  /search/suggestions/list:
+    post:
+      consumes:
+      - application/json
+      description: 仅按文档标题匹配，不记录热门词或用户搜索行为。空关键词返回空列表。
+      parameters:
+      - description: 输入关键词与返回数量
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/main.suggestionListRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.suggestionResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/main.errorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/main.errorResponse'
+      summary: 获取搜索关键词建议
       tags:
       - 搜索
 schemes:
