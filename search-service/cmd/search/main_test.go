@@ -70,7 +70,13 @@ func TestRequestBaseURLUsesForwardedHeaders(t *testing.T) {
 
 func TestSearchSuggestionsDeduplicatesDocumentIDs(t *testing.T) {
 	suggestions, err := searchSuggestions([]any{
-		map[string]any{"docId": "test-kirito", "title": "域名管理"},
+		map[string]any{
+			"docId": "test-kirito",
+			"title": "域名管理",
+			"_formatted": map[string]any{
+				"title": "域名<mark>管理</mark>",
+			},
+		},
 		map[string]any{"docId": "test-kirito", "title": "域名管理"},
 	}, "https://help.test.starviewcloud.com")
 	if err != nil {
@@ -78,6 +84,9 @@ func TestSearchSuggestionsDeduplicatesDocumentIDs(t *testing.T) {
 	}
 	if len(suggestions) != 1 || suggestions[0].URL != "https://help.test.starviewcloud.com/test-kirito" {
 		t.Fatalf("searchSuggestions() = %#v", suggestions)
+	}
+	if suggestions[0].Highlight.Title != "域名<mark>管理</mark>" {
+		t.Fatalf("suggestion highlight = %#v", suggestions[0].Highlight)
 	}
 }
 
@@ -107,7 +116,7 @@ func TestApifoxUIUsesOpenAPIV3Document(t *testing.T) {
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d", recorder.Code)
 	}
-	if !strings.Contains(recorder.Body.String(), "openapi.json") {
+	if !strings.Contains(recorder.Body.String(), `url: "openapi.json"`) {
 		t.Fatal("Apifox UI does not load the OpenAPI 3.0 document")
 	}
 }

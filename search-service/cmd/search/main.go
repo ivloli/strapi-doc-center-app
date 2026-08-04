@@ -166,11 +166,16 @@ type searchResponse struct {
 }
 
 type searchSuggestion struct {
-	Keyword string `json:"keyword" example:"域名管理"`
-	DocID   string `json:"docId" example:"test-kirito"`
-	Title   string `json:"title" example:"域名防封使用说明"`
-	Path    string `json:"path" example:"/test-kirito"`
-	URL     string `json:"url" example:"https://help.test.starviewcloud.com/test-kirito"`
+	Keyword   string              `json:"keyword" example:"域名管理"`
+	DocID     string              `json:"docId" example:"test-kirito"`
+	Title     string              `json:"title" example:"域名防封使用说明"`
+	Path      string              `json:"path" example:"/test-kirito"`
+	URL       string              `json:"url" example:"https://help.test.starviewcloud.com/test-kirito"`
+	Highlight suggestionHighlight `json:"highlight"`
+}
+
+type suggestionHighlight struct {
+	Title string `json:"title" example:"域名<mark>管理</mark>"`
 }
 
 type suggestionData struct {
@@ -301,7 +306,8 @@ func (s *service) routes() http.Handler {
 	mux.HandleFunc("POST /internal/sync", s.internalSync)
 	mux.HandleFunc("GET /apifox/openapi.json", s.apifoxDocument)
 	// 复用 Swagger UI 展示 OpenAPI 3.0 文档；Apifox 仍可使用同一 JSON 地址导入。
-	mux.Handle("GET /apifox/", httpSwagger.Handler(httpSwagger.URL("/apifox/openapi.json")))
+	// 相对地址兼容本机访问及 Nginx 的 /search-apifox/ 前缀代理。
+	mux.Handle("GET /apifox/", httpSwagger.Handler(httpSwagger.URL("openapi.json")))
 	mux.Handle("GET /swagger/", httpSwagger.WrapHandler)
 	return mux
 }
@@ -842,11 +848,15 @@ func (m *meiliClient) search(ctx context.Context, index, query string, page, pag
 }
 
 // suggestions 仅搜索标题字段，保持自动补全请求快速且结果简洁。
+// 返回的 _formatted.title 会转换为 highlight.title，便于前端标记用户输入的匹配词。
 func (m *meiliClient) suggestions(ctx context.Context, index, query string, limit int) (map[string]any, error) {
 	raw, err := m.client.Index(index).SearchRawWithContext(ctx, query, &meilisearch.SearchRequest{
-		Limit:                int64(limit),
-		AttributesToRetrieve: []string{"docId", "title"},
-		AttributesToSearchOn: []string{"title"},
+		Limit:                 int64(limit),
+		AttributesToRetrieve:  []string{"docId", "title"},
+		AttributesToSearchOn:  []string{"title"},
+		AttributesToHighlight: []string{"title"},
+		HighlightPreTag:       "<mark>",
+		HighlightPostTag:      "</mark>",
 	})
 	if err != nil {
 		return nil, err
@@ -977,12 +987,19 @@ func searchSuggestions(value any, baseURL string) ([]searchSuggestion, error) {
 		if baseURL != "" {
 			url = baseURL + path
 		}
+		titleHighlight := source.Title
+		if source.Formatted != nil && source.Formatted.Title != "" {
+			titleHighlight = source.Formatted.Title
+		}
 		suggestions = append(suggestions, searchSuggestion{
 			Keyword: source.Title,
 			DocID:   source.DocID,
 			Title:   source.Title,
 			Path:    path,
 			URL:     url,
+			Highlight: suggestionHighlight{
+				Title: titleHighlight,
+			},
 		})
 	}
 	return suggestions, nil

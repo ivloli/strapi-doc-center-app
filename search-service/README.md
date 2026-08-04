@@ -72,7 +72,7 @@ Use `POST /search/suggestions/list` while the user is typing. It performs title-
 }
 ```
 
-The returned `data.list` contains the suggestion keyword, `docId`, `path`, and complete `url`. After a user selects a suggestion or confirms input, call `POST /search/list` for the content result list.
+The returned `data.list` contains the suggestion keyword, `docId`, `path`, complete `url`, and `highlight.title`. `highlight.title` contains only the matching title fragment wrapped in `<mark>` tags. After a user selects a suggestion or confirms input, call `POST /search/list` for the content result list.
 
 All endpoints use the platform response envelope. The search result shape is:
 

@@ -116,6 +116,8 @@ definitions:
       docId:
         example: test-kirito
         type: string
+      highlight:
+        $ref: '#/definitions/main.suggestionHighlight'
       keyword:
         example: 域名管理
         type: string
@@ -135,6 +137,12 @@ definitions:
         items:
           $ref: '#/definitions/main.searchSuggestion'
         type: array
+    type: object
+  main.suggestionHighlight:
+    properties:
+      title:
+        example: 域名<mark>管理</mark>
+        type: string
     type: object
   main.suggestionListRequest:
     properties:

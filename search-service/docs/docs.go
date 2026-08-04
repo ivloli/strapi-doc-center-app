@@ -353,6 +353,9 @@ const docTemplate = `{
                     "type": "string",
                     "example": "test-kirito"
                 },
+                "highlight": {
+                    "$ref": "#/definitions/main.suggestionHighlight"
+                },
                 "keyword": {
                     "type": "string",
                     "example": "域名管理"
@@ -379,6 +382,15 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/main.searchSuggestion"
                     }
+                }
+            }
+        },
+        "main.suggestionHighlight": {
+            "type": "object",
+            "properties": {
+                "title": {
+                    "type": "string",
+                    "example": "域名\u003cmark\u003e管理\u003c/mark\u003e"
                 }
             }
         },
