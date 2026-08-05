@@ -94,7 +94,7 @@ const docTemplate = `{
         },
         "/search/list": {
             "post": {
-                "description": "仅按标题搜索已发布且具有已发布菜单入口的文档，与关键词联想保持一致。",
+                "description": "在标题和正文中搜索已发布且具有已发布菜单入口的文档。",
                 "consumes": [
                     "application/json"
                 ],

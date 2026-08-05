@@ -51,7 +51,7 @@ GET /healthz
 POST /internal/sync
 ```
 
-`/search/list` and `/search/suggestions/list` both match document titles only, so the result list is consistent with the keyword recommendations shown while typing. `path` is the relative frontend route derived from `docId`; `url` is the same route with the request's reverse-proxy domain and protocol. `summary` is a cropped plain-text excerpt, while `highlight.title` and `highlight.summary` contain the same fields with Meilisearch `<mark>` tags. Escape all non-highlight content and render only `<mark>` tags as markup.
+`/search/list` matches document titles and content. `/search/suggestions/list` matches titles only and returns title candidates for filling the search input. `path` is the relative frontend route derived from `docId`; `url` is the same route with the request's reverse-proxy domain and protocol. `summary` is a cropped plain-text excerpt, while `highlight.title` and `highlight.summary` contain the same fields with Meilisearch `<mark>` tags. Escape all non-highlight content and render only `<mark>` tags as markup.
 
 ```json
 {
@@ -72,7 +72,7 @@ Use `POST /search/suggestions/list` while the user is typing. It performs title-
 }
 ```
 
-The returned `data.list` contains the suggestion keyword, `docId`, `path`, complete `url`, and `highlight.title`. `highlight.title` contains only the matching title fragment wrapped in `<mark>` tags. After a user selects a suggestion or confirms input, call `POST /search/list` for the content result list.
+The returned `data.list` contains the suggestion keyword, `docId`, `path`, complete `url`, and `highlight.title`. `highlight.title` contains the matching title fragment wrapped in `<mark>` tags. After a user selects a suggestion or confirms input, call `POST /search/list` for the content result list.
 
 All endpoints use the platform response envelope. The search result shape is:
 

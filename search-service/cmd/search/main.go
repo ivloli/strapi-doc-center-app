@@ -408,7 +408,7 @@ func (s *service) suggestions(w http.ResponseWriter, r *http.Request) {
 
 // search 查询 Meilisearch 并标准化分页响应。
 // @Summary 搜索公开文档
-// @Description 仅按标题搜索已发布且具有已发布菜单入口的文档，与关键词联想保持一致。
+// @Description 在标题和正文中搜索已发布且具有已发布菜单入口的文档。
 // @Tags 搜索
 // @Accept json
 // @Produce json
@@ -824,13 +824,12 @@ func (m *meiliClient) deleteDocuments(ctx context.Context, index string, ids []s
 	return m.waitTask(ctx, task)
 }
 
-// search 调用 Meilisearch，仅在标题字段匹配；正文仅用于返回裁剪摘要。
-// 该范围与 suggestions 一致，避免搜索结果和推荐关键词出现不一致的命中。
+// search 调用 Meilisearch，在标题和正文中匹配并返回裁剪摘要。
 func (m *meiliClient) search(ctx context.Context, index, query string, page, pageSize int) (map[string]any, error) {
 	raw, err := m.client.Index(index).SearchRawWithContext(ctx, query, &meilisearch.SearchRequest{
 		Offset:                int64((page - 1) * pageSize),
 		Limit:                 int64(pageSize),
-		AttributesToSearchOn:  []string{"title"},
+		AttributesToSearchOn:  []string{"title", "content"},
 		AttributesToHighlight: []string{"title", "content"},
 		AttributesToCrop:      []string{"content:180"},
 		HighlightPreTag:       "<mark>",
