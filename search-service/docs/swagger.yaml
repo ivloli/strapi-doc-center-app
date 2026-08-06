@@ -94,6 +94,9 @@ definitions:
     type: object
   main.searchListRequest:
     properties:
+      appId:
+        example: 15
+        type: integer
       keyword:
         example: 快速开始
         type: string
@@ -146,6 +149,9 @@ definitions:
     type: object
   main.suggestionListRequest:
     properties:
+      appId:
+        example: 15
+        type: integer
       keyword:
         example: 管理
         type: string

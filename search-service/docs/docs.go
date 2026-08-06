@@ -321,6 +321,10 @@ const docTemplate = `{
         "main.searchListRequest": {
             "type": "object",
             "properties": {
+                "appId": {
+                    "type": "integer",
+                    "example": 15
+                },
                 "keyword": {
                     "type": "string",
                     "example": "快速开始"
@@ -397,6 +401,10 @@ const docTemplate = `{
         "main.suggestionListRequest": {
             "type": "object",
             "properties": {
+                "appId": {
+                    "type": "integer",
+                    "example": 15
+                },
                 "keyword": {
                     "type": "string",
                     "example": "管理"

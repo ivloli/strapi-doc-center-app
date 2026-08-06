@@ -49,12 +49,15 @@ type indexedDocument struct {
 	Title         string `json:"title"`
 	Content       string `json:"content"`
 	URL           string `json:"url"`
+	AppIDs        []int  `json:"appIds"`
 	SourceVersion string `json:"sourceVersion"`
 }
 
 type sourceMetadata struct {
 	ID            string
 	DocID         string
+	AppIDs        []int
+	DocUpdatedAt  *string
 	SourceVersion string
 }
 
@@ -80,12 +83,14 @@ type syncRequest struct {
 
 type searchListRequest struct {
 	Keyword    string            `json:"keyword" example:"快速开始"`
+	AppID      int               `json:"appId" example:"15"`
 	Pagination paginationRequest `json:"pagination"`
 }
 
 type suggestionListRequest struct {
 	Keyword string `json:"keyword" example:"管理"`
 	Limit   int    `json:"limit" example:"8"`
+	AppID   int    `json:"appId" example:"15"`
 }
 
 type paginationRequest struct {
@@ -379,6 +384,10 @@ func (s *service) suggestions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	keyword := strings.TrimSpace(request.Keyword)
+	if request.AppID < 0 {
+		writeError(w, http.StatusBadRequest, "appId must be a non-negative integer")
+		return
+	}
 	if keyword == "" {
 		writeJSON(w, http.StatusOK, suggestionResponse{
 			Code:    http.StatusOK,
@@ -387,7 +396,7 @@ func (s *service) suggestions(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	result, err := s.meili.suggestions(r.Context(), s.config.index, keyword, boundedInt(request.Limit, 8, 1, 20))
+	result, err := s.meili.suggestions(r.Context(), s.config.index, keyword, boundedInt(request.Limit, 8, 1, 20), request.AppID)
 	if err != nil {
 		log.Printf("suggestions failed: %v", err)
 		writeError(w, http.StatusServiceUnavailable, "suggestions are temporarily unavailable")
@@ -430,10 +439,14 @@ func (s *service) search(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "keyword is required")
 		return
 	}
+	if request.AppID < 0 {
+		writeError(w, http.StatusBadRequest, "appId must be a non-negative integer")
+		return
+	}
 	page := boundedInt(request.Pagination.Page, 1, 1, 100000)
 	pageSize := boundedInt(request.Pagination.PageSize, 20, 1, 100)
 
-	result, err := s.meili.search(r.Context(), s.config.index, query, page, pageSize)
+	result, err := s.meili.search(r.Context(), s.config.index, query, page, pageSize, request.AppID)
 	if err != nil {
 		log.Printf("search failed: %v", err)
 		writeError(w, http.StatusServiceUnavailable, "search is temporarily unavailable")
@@ -559,7 +572,7 @@ func (s *service) syncLocked(ctx context.Context) error {
 			changedDocIDs = append(changedDocIDs, metadata.DocID)
 		}
 	}
-	documents, err := s.readDocuments(ctx, changedDocIDs)
+	documents, err := s.readDocuments(ctx, changedDocIDs, source)
 	if err != nil {
 		return err
 	}
@@ -595,7 +608,7 @@ func (s *service) syncDocument(ctx context.Context, docID string) error {
 	if _, found := source[indexID]; !found {
 		return s.meili.deleteDocuments(ctx, s.config.index, []string{indexID})
 	}
-	documents, err := s.readDocuments(ctx, []string{docID})
+	documents, err := s.readDocuments(ctx, []string{docID}, source)
 	if err != nil {
 		return err
 	}
@@ -616,12 +629,14 @@ func (s *service) upsertBatches(ctx context.Context, documents []indexedDocument
 	return nil
 }
 
-// readMetadata 只读取具有已发布菜单入口的文档标识和更新时间，用于轻量级差异判断。
+// readMetadata 聚合每篇公开文档在已发布菜单中的 appId，用于可见性和差异判断。
 func (s *service) readMetadata(ctx context.Context, docIDs []string) (map[string]sourceMetadata, error) {
 	query := `
-SELECT d.doc_id, d.updated_at
+SELECT d.doc_id, d.updated_at, m.app_id
 FROM docs d
-WHERE d.published_at IS NOT NULL` + visibleMenuCondition
+JOIN menus m ON m.published_at IS NOT NULL
+  AND (m.doc_id = d.doc_id OR m.value = d.title)
+WHERE d.published_at IS NOT NULL`
 	args := []any{}
 	if docIDs != nil {
 		query += "\n  AND d.doc_id = ANY($1::text[])"
@@ -638,7 +653,8 @@ WHERE d.published_at IS NOT NULL` + visibleMenuCondition
 	for rows.Next() {
 		var id pgtype.Text
 		var docUpdatedAt pgtype.Timestamptz
-		if err := rows.Scan(&id, &docUpdatedAt); err != nil {
+		var appID pgtype.Int4
+		if err := rows.Scan(&id, &docUpdatedAt, &appID); err != nil {
 			return nil, fmt.Errorf("scan source metadata: %w", err)
 		}
 		if !id.Valid || strings.TrimSpace(id.String) == "" {
@@ -646,20 +662,32 @@ WHERE d.published_at IS NOT NULL` + visibleMenuCondition
 			continue
 		}
 		indexID := documentIndexID(id.String)
-		metadata[indexID] = sourceMetadata{
-			ID:            indexID,
-			DocID:         id.String,
-			SourceVersion: sourceVersion(id.String, timestampValue(docUpdatedAt)),
+		entry, found := metadata[indexID]
+		if !found {
+			entry = sourceMetadata{
+				ID:           indexID,
+				DocID:        id.String,
+				DocUpdatedAt: timestampValue(docUpdatedAt),
+			}
 		}
+		if appID.Valid {
+			entry.AppIDs = append(entry.AppIDs, int(appID.Int32))
+		}
+		metadata[indexID] = entry
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate source metadata: %w", err)
+	}
+	for indexID, entry := range metadata {
+		entry.AppIDs = normalizedAppIDs(entry.AppIDs)
+		entry.SourceVersion = sourceVersion(entry.DocID, entry.DocUpdatedAt, entry.AppIDs)
+		metadata[indexID] = entry
 	}
 	return metadata, nil
 }
 
 // readDocuments 仅为变化的 docId 读取标题和正文，并生成最终索引文档。
-func (s *service) readDocuments(ctx context.Context, docIDs []string) ([]indexedDocument, error) {
+func (s *service) readDocuments(ctx context.Context, docIDs []string, source map[string]sourceMetadata) ([]indexedDocument, error) {
 	if len(docIDs) == 0 {
 		return nil, nil
 	}
@@ -687,13 +715,18 @@ ORDER BY d.doc_id`
 		if !id.Valid || strings.TrimSpace(id.String) == "" {
 			continue
 		}
+		metadata, found := source[documentIndexID(id.String)]
+		if !found {
+			continue
+		}
 		documents = append(documents, indexedDocument{
 			ID:            documentIndexID(id.String),
 			DocID:         id.String,
 			Title:         textValue(title),
 			Content:       document.PlainText(textValue(content)),
 			URL:           documentPath(id.String),
-			SourceVersion: sourceVersion(id.String, timestampValue(docUpdatedAt)),
+			AppIDs:        metadata.AppIDs,
+			SourceVersion: metadata.SourceVersion,
 		})
 	}
 	if err := rows.Err(); err != nil {
@@ -702,14 +735,30 @@ ORDER BY d.doc_id`
 	return documents, nil
 }
 
-// sourceVersion 以稳定 JSON 计算 SHA-256，安全区分空字符串与 null 元数据。
-func sourceVersion(docID string, docUpdatedAt *string) string {
+// sourceVersion 以稳定 JSON 计算 SHA-256，纳入菜单可见的 appIds 以触发应用范围变更后的重建。
+func sourceVersion(docID string, docUpdatedAt *string, appIDs []int) string {
 	payload, _ := json.Marshal(struct {
 		DocID        string  `json:"docId"`
 		DocUpdatedAt *string `json:"docUpdatedAt"`
-	}{docID, docUpdatedAt})
+		AppIDs       []int   `json:"appIds"`
+	}{docID, docUpdatedAt, appIDs})
 	sum := sha256.Sum256(payload)
 	return hex.EncodeToString(sum[:])
+}
+
+// normalizedAppIDs 排序并去重菜单关联的 appId，确保索引版本稳定。
+func normalizedAppIDs(appIDs []int) []int {
+	if len(appIDs) == 0 {
+		return []int{}
+	}
+	sort.Ints(appIDs)
+	unique := appIDs[:1]
+	for _, appID := range appIDs[1:] {
+		if appID != unique[len(unique)-1] {
+			unique = append(unique, appID)
+		}
+	}
+	return unique
 }
 
 // documentIndexID 将任意 Strapi docId 转为 Meilisearch 可用的稳定主键。
@@ -760,7 +809,8 @@ func (m *meiliClient) createIndex(ctx context.Context, index string) error {
 func (m *meiliClient) configureIndex(ctx context.Context, index string) error {
 	task, err := m.client.Index(index).UpdateSettingsWithContext(ctx, &meilisearch.Settings{
 		SearchableAttributes: []string{"title", "content"},
-		DisplayedAttributes:  []string{"id", "docId", "title", "content", "url", "sourceVersion"},
+		DisplayedAttributes:  []string{"id", "docId", "title", "content", "url", "appIds", "sourceVersion"},
+		FilterableAttributes: []string{"appIds"},
 	})
 	if err != nil {
 		return fmt.Errorf("configure index: %w", err)
@@ -825,8 +875,8 @@ func (m *meiliClient) deleteDocuments(ctx context.Context, index string, ids []s
 }
 
 // search 调用 Meilisearch，在标题和正文中匹配并返回裁剪摘要。
-func (m *meiliClient) search(ctx context.Context, index, query string, page, pageSize int) (map[string]any, error) {
-	raw, err := m.client.Index(index).SearchRawWithContext(ctx, query, &meilisearch.SearchRequest{
+func (m *meiliClient) search(ctx context.Context, index, query string, page, pageSize, appID int) (map[string]any, error) {
+	request := &meilisearch.SearchRequest{
 		Offset:                int64((page - 1) * pageSize),
 		Limit:                 int64(pageSize),
 		AttributesToSearchOn:  []string{"title", "content"},
@@ -835,7 +885,11 @@ func (m *meiliClient) search(ctx context.Context, index, query string, page, pag
 		HighlightPreTag:       "<mark>",
 		HighlightPostTag:      "</mark>",
 		CropMarker:            "...",
-	})
+	}
+	if appID > 0 {
+		request.Filter = appIDFilter(appID)
+	}
+	raw, err := m.client.Index(index).SearchRawWithContext(ctx, query, request)
 	if err != nil {
 		return nil, err
 	}
@@ -848,15 +902,19 @@ func (m *meiliClient) search(ctx context.Context, index, query string, page, pag
 
 // suggestions 仅搜索标题字段，保持自动补全请求快速且结果简洁。
 // 返回的 _formatted.title 会转换为 highlight.title，便于前端标记用户输入的匹配词。
-func (m *meiliClient) suggestions(ctx context.Context, index, query string, limit int) (map[string]any, error) {
-	raw, err := m.client.Index(index).SearchRawWithContext(ctx, query, &meilisearch.SearchRequest{
+func (m *meiliClient) suggestions(ctx context.Context, index, query string, limit, appID int) (map[string]any, error) {
+	request := &meilisearch.SearchRequest{
 		Limit:                 int64(limit),
 		AttributesToRetrieve:  []string{"docId", "title"},
 		AttributesToSearchOn:  []string{"title"},
 		AttributesToHighlight: []string{"title"},
 		HighlightPreTag:       "<mark>",
 		HighlightPostTag:      "</mark>",
-	})
+	}
+	if appID > 0 {
+		request.Filter = appIDFilter(appID)
+	}
+	raw, err := m.client.Index(index).SearchRawWithContext(ctx, query, request)
 	if err != nil {
 		return nil, err
 	}
@@ -865,6 +923,14 @@ func (m *meiliClient) suggestions(ctx context.Context, index, query string, limi
 		return nil, err
 	}
 	return result, nil
+}
+
+// appIDFilter 将可选 appId 转为 Meilisearch 数组过滤条件；0 表示跨应用全局搜索。
+func appIDFilter(appID int) any {
+	if appID <= 0 {
+		return nil
+	}
+	return fmt.Sprintf("appIds = %d", appID)
 }
 
 // waitTask 等待 Meilisearch 异步写操作结束，并将失败任务转换为错误。

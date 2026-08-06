@@ -10,16 +10,32 @@ import (
 )
 
 func TestSourceVersionHandlesMissingTimestamps(t *testing.T) {
-	version := sourceVersion("doc-1", nil)
+	version := sourceVersion("doc-1", nil, []int{15})
 	if version == "" {
 		t.Fatal("sourceVersion() returned an empty hash")
 	}
-	if version != sourceVersion("doc-1", nil) {
+	if version != sourceVersion("doc-1", nil, []int{15}) {
 		t.Fatal("sourceVersion() is not stable for missing fields")
 	}
 	updatedAt := "2026-08-03T00:00:00Z"
-	if version == sourceVersion("doc-1", &updatedAt) {
+	if version == sourceVersion("doc-1", &updatedAt, []int{15}) {
 		t.Fatal("sourceVersion() did not change when the document update time changed")
+	}
+}
+
+func TestNormalizedAppIDsSortsAndDeduplicates(t *testing.T) {
+	appIDs := normalizedAppIDs([]int{15, 2, 15, 8, 2})
+	if len(appIDs) != 3 || appIDs[0] != 2 || appIDs[1] != 8 || appIDs[2] != 15 {
+		t.Fatalf("normalizedAppIDs() = %#v", appIDs)
+	}
+}
+
+func TestAppIDFilter(t *testing.T) {
+	if appIDFilter(0) != nil {
+		t.Fatal("appIDFilter(0) should not filter global search")
+	}
+	if got := appIDFilter(15); got != "appIds = 15" {
+		t.Fatalf("appIDFilter(15) = %#v", got)
 	}
 }
 

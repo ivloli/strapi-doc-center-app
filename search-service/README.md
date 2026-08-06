@@ -6,6 +6,7 @@ This is a standalone Go service. It does not call or modify Strapi: PostgreSQL r
 
 - Indexes only documents with a non-null `docs.published_at` and an associated published menu.
 - Matches a menu through `menus.doc_id = docs.doc_id`, or the legacy `menus.value = docs.title` convention.
+- Aggregates visible `menus.app_id` values into each indexed document's `appIds` field.
 - Uses `/<docId>` as the document URL, matching the frontend route.
 - Strapi lifecycle notifications trigger an idempotent single-document sync.
 - Reconciles source and index metadata on startup and at `SYNC_INTERVAL`.
@@ -53,9 +54,12 @@ POST /internal/sync
 
 `/search/list` matches document titles and content. `/search/suggestions/list` matches titles only and returns title candidates for filling the search input. `path` is the relative frontend route derived from `docId`; `url` is the same route with the request's reverse-proxy domain and protocol. `summary` is a cropped plain-text excerpt, while `highlight.title` and `highlight.summary` contain the same fields with Meilisearch `<mark>` tags. Escape all non-highlight content and render only `<mark>` tags as markup.
 
+Both request bodies accept an optional numeric `appId`. Send a positive value such as `15` to return only documents reachable from that application's published menus. Omit `appId`, or send `0`, for a global search across all applications.
+
 ```json
 {
   "keyword": "快速开始",
+  "appId": 15,
   "pagination": {
     "page": 1,
     "pageSize": 20
@@ -68,6 +72,7 @@ Use `POST /search/suggestions/list` while the user is typing. It performs title-
 ```json
 {
   "keyword": "管理",
+  "appId": 15,
   "limit": 8
 }
 ```
