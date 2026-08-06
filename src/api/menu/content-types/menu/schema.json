@@ -37,6 +37,9 @@
       "type": "string",
       "required": false,
       "unique": true
+    },
+    "appId": {
+      "type": "integer"
     }
   }
 }
